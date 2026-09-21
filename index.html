@@ -245,6 +245,25 @@
     <p class="section-text">I work across the systems stack: CUDA kernels, LLM inference, Post training, and production backend services. I care about measurable performance, correctness, and how the system behaves underneath the API.</p>
   </section>
 
+ <section class="section" id="open-source">
+    <h2 class="section-title">Open Source Contributions</h2>
+    <p class="section-note">Upstream pull requests, currently under review.</p>
+
+    <div class="oss-item">
+      <div class="oss-name"><a href="https://github.com/NVIDIA/cutlass/pull/3615" target="_blank" rel="noreferrer">NVIDIA CUTLASS · PR #3615</a></div>
+      <div class="oss-meta"><span class="status">Open PR</span></div>
+      <div class="oss-desc">Fixes blockwise FP8 scale indexing under serial split-K so each GEMM slice uses its global K-block scales, with SM89 regression coverage across split-K 1/2/4.</div>
+      <div class="oss-links"><a href="https://github.com/NVIDIA/cutlass/pull/3615" target="_blank" rel="noreferrer">View upstream PR ↗</a></div>
+    </div>
+
+    <div class="oss-item">
+      <div class="oss-name"><a href="https://github.com/pytorch/executorch/pull/22796" target="_blank" rel="noreferrer">PyTorch ExecuTorch · PR #22796</a></div>
+      <div class="oss-meta"><span class="status">Open PR</span></div>
+      <div class="oss-desc">Fixes Cortex-M lowering for explicitly decomposed Transformer attention so quantized BMM, softmax, and scalar multiplication lower correctly, with Cortex-M55 FVP validation.</div>
+      <div class="oss-links"><a href="https://github.com/pytorch/executorch/pull/22796" target="_blank" rel="noreferrer">View upstream PR ↗</a></div>
+    </div>
+  </section>
+
   <section class="section">
     <h2 class="section-title">Work Experience</h2>
 
@@ -254,7 +273,7 @@
       <div class="work-location">Chico, CA</div>
       <div class="work-role">Research Assistant — 3D Computer Vision / Sensor Data Processing</div>
       <div class="work-desc"><ul>
-        <li>Built a C++/OpenCV tooling around Intel RealSense D455F RGB-D recordings for road-surface analysis and repeatable sensor-processing experiments.</li>
+        <li>Built C++/OpenCV tooling around Intel RealSense D455F RGB-D recordings for road-surface analysis and repeatable sensor-processing experiments.</li>
         <li>Worked with depth/color alignment, filtering, road-plane fitting, deviation maps, candidate masks, ROI measurements, overlays, and frame-level reports.</li>
       </ul></div>
       <div class="work-tags"><span class="tag">C++</span><span class="tag">OpenCV</span><span class="tag">Intel RealSense</span><span class="tag">Linux</span></div>
@@ -362,13 +381,28 @@
     </div>
   </section>
 
-  <section class="section">
+ <section class="section">
     <h2 class="section-title">Featured Projects</h2>
-    <p class="section-note">One representative project from each area; the category explorer above links to the broader set.</p>
+    <p class="section-note">Selected work; the category explorer above links to the rest.</p>
+
+    <div class="project-item">
+      <div class="project-name"><a href="https://github.com/amacharla15/pytorch/tree/main/LLMPort-A100" target="_blank" rel="noreferrer">LLMPort-A100</a></div>
+      <div class="project-meta">ML / Inference Systems</div>
+      <div class="project-desc">Tensor-parallel transformer inference on 2× A100 (NVLink): vLLM serving benchmarks (TTFT, TPOT, throughput across prompt length, output length, and concurrency), NCCL collective benchmarks, row/column-parallel linear-layer communication demos, and PyTorch FX / torch.compile operator analysis for model porting.</div>
+      <div class="project-proof">Qwen2.5-1.5B at TP=2 · TPOT 3.3–5.6 ms · NCCL at 256 MB: ~173 GB/s all-reduce, ~253 GB/s broadcast</div>
+      <div class="project-links"><a href="https://github.com/amacharla15/pytorch/tree/main/LLMPort-A100" target="_blank" rel="noreferrer">Code ↗</a><a href="https://github.com/amacharla15/pytorch/blob/main/LLMPort-A100/reports/final_summary.md" target="_blank" rel="noreferrer">Results ↗</a></div>
+    </div>
+
+    <div class="project-item">
+      <div class="project-name"><a href="https://github.com/amacharla15/CUDAkernels" target="_blank" rel="noreferrer">CUDA Kernel Suite</a></div>
+      <div class="project-meta">GPU Performance</div>
+      <div class="project-desc">CUDA kernels written from scratch: reductions, shared-memory tiling, warp-level primitives, and ML/attention kernels.</div>
+      <div class="project-links"><a href="https://github.com/amacharla15/CUDAkernels" target="_blank" rel="noreferrer">Repository ↗</a></div>
+    </div>
 
     <div class="project-item">
       <div class="project-name"><a href="https://github.com/amacharla15/Parallel-BPE-Tokenizer" target="_blank" rel="noreferrer">Parallel BPE Tokenizer</a></div>
-      <div class="project-meta">GPU / Native Performance</div>
+      <div class="project-meta">Native Performance (C++)</div>
       <div class="project-desc">GPT-2-style byte-level BPE tokenizer implemented in C++ with a reusable thread pool and thread-local cache, benchmarked against tiktoken and Hugging Face Tokenizers.</div>
       <div class="project-proof">2.11M tok/s at 8 threads · ~5× thread scaling · 91.6% of tiktoken throughput on the benchmark workload</div>
       <div class="project-links"><a href="https://github.com/amacharla15/Parallel-BPE-Tokenizer" target="_blank" rel="noreferrer">Repository ↗</a></div>
@@ -381,23 +415,21 @@
       <div class="project-proof">Concurrent same-seat race → exactly one hold succeeds · losing requests return 409 · Docker + CI/CD + Azure deployment</div>
       <div class="project-links"><a href="https://github.com/amacharla15/FlashSeatReservation" target="_blank" rel="noreferrer">Repository ↗</a></div>
     </div>
-
-    <div class="project-item">
-      <div class="project-name"><a href="https://github.com/amacharla15/CalhacksChaosReviewer" target="_blank" rel="noreferrer">Chaos Reviewer</a></div>
-      <div class="project-meta">Agentic AI / RAG</div>
-      <div class="project-desc">Build-log triage agent that recognizes GCC/Clang, pytest, and TypeScript failures, extracts the first actionable error, and returns a compact fix plus rationale through the Agent Chat Protocol.</div>
-      <div class="project-proof">7.2K interactions · #2 most-used agent in the Fetch.AI track at CalHacks 12.0</div>
-      <div class="project-links"><a href="https://youtu.be/6zm-sZNBaZI?si=T544jo37gzvgoSuM" target="_blank" rel="noreferrer">Demo ↗</a><a href="https://github.com/amacharla15/CalhacksChaosReviewer" target="_blank" rel="noreferrer">Repository ↗</a><a href="https://agentverse.ai/agents/details/agent1qgsz86macef9mjfe2m6ry2g5uqusuwechxxa4atrph9qla47694qs4cevz3/profile" target="_blank" rel="noreferrer" title="Historical Agentverse profile. Hosted-use window ended November 24, 2025; when hosted, error inputs were prefixed with 'error:'.">Agentverse profile (historical) ↗</a></div>
-    </div>
   </section>
 
-  <section class="section">
+<section class="section">
     <h2 class="section-title">Education</h2>
     <div class="edu-item">
       <div class="edu-school">California State University, Chico</div>
       <div class="edu-dates">Dec 2026</div>
-      <div class="edu-degree">Master of Science, Computer Science</div>
+      <div class="edu-degree">Master of Science, Computer Science · GPA 3.95</div>
       <div class="edu-detail">Machine Learning · Computer Vision · Data Structures & Algorithms · Software Design · Systems coursework</div>
+    </div>
+    <div class="edu-item">
+      <div class="edu-school">Chaitanya Bharathi Institute of Technology, Hyderabad</div>
+      <div class="edu-dates">2021</div>
+      <div class="edu-degree">Bachelor of Engineering, Electrical and Electronics Engineering</div>
+      <div class="edu-detail">Microprocessors & Microcontrollers · Embedded Systems · Digital Logic Design · Digital Signal Processing</div>
     </div>
   </section>
 
@@ -406,25 +438,8 @@
     <div class="skills-group"><div class="skills-label">Languages</div><div class="skills-row"><span class="skill-tag">C++</span><span class="skill-tag">CUDA</span><span class="skill-tag">Python</span><span class="skill-tag">Java</span></div></div>
     <div class="skills-group"><div class="skills-label">ML Systems / GPU</div><div class="skills-row"><span class="skill-tag">PyTorch</span><span class="skill-tag">vLLM</span><span class="skill-tag">NCCL</span><span class="skill-tag">torch.compile / FX</span><span class="skill-tag">Quantization</span><span class="skill-tag">Nsight Systems / Compute</span></div></div>
     <div class="skills-group"><div class="skills-label">Backend / Distributed</div><div class="skills-row"><span class="skill-tag">Spring Boot</span><span class="skill-tag">PostgreSQL</span><span class="skill-tag">Redis</span><span class="skill-tag">Docker</span><span class="skill-tag">Kubernetes</span><span class="skill-tag">AWS</span><span class="skill-tag">Linux</span></div></div>
-  </section>
-
-  <section class="section" id="open-source">
-    <h2 class="section-title">Open Source Contributions</h2>
-    <p class="section-note">Current upstream pull requests. These are intentionally separated from merged/finished project work.</p>
-
-    <div class="oss-item">
-      <div class="oss-name"><a href="https://github.com/NVIDIA/cutlass/pull/3615" target="_blank" rel="noreferrer">NVIDIA CUTLASS · PR #3615</a></div>
-      <div class="oss-meta"><span class="status">Open PR</span></div>
-      <div class="oss-desc">Fixes blockwise FP8 scale indexing under serial split-K so each GEMM slice uses its global K-block scales, with SM89 regression coverage across split-K 1/2/4.</div>
-      <div class="oss-links"><a href="https://github.com/NVIDIA/cutlass/pull/3615" target="_blank" rel="noreferrer">View upstream PR ↗</a></div>
-    </div>
-
-    <div class="oss-item">
-      <div class="oss-name"><a href="https://github.com/pytorch/executorch/pull/22796" target="_blank" rel="noreferrer">PyTorch ExecuTorch · PR #22796</a></div>
-      <div class="oss-meta"><span class="status">Open PR</span></div>
-      <div class="oss-desc">Fixes Cortex-M lowering for explicitly decomposed Transformer attention so quantized BMM, softmax, and scalar multiplication lower correctly, with Cortex-M55 FVP validation.</div>
-      <div class="oss-links"><a href="https://github.com/pytorch/executorch/pull/22796" target="_blank" rel="noreferrer">View upstream PR ↗</a></div>
-    </div>
+    <div class="skills-group"><div class="skills-label">Post-Training</div><div class="skills-row"><span class="skill-tag">SFT</span><span class="skill-tag">LoRA</span><span class="skill-tag">Reward Modeling</span><span class="skill-tag">PPO</span><span class="skill-tag">DPO</span></div></div>  
+</section>
 
   <section class="section" id="resumes">
     <h2 class="section-title">Resumes</h2>
