@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Akshith Macharla</title>
-<meta name="description" content="Akshith Macharla — software engineer working across ML systems, GPU/compiler tooling, backend systems, and AI applications.">
+<meta name="description" content="Akshith Macharla — Software engineer working on LLM inference, Post training and backend/distributed systems.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -228,7 +228,7 @@
   <header class="header">
     <div class="header-info">
       <h1>Akshith Macharla</h1>
-      <p class="header-tagline">Software engineer building ML/inference systems, native performance tooling, distributed backends, data systems, and AI applications.</p>
+      <p class="header-tagline">Software engineer working on LLM inference, Post training and backend/distributed systems.</p>
       <div class="header-meta">M.S. Computer Science, CSU Chico · Dec 2026</div>
       <div class="header-links">
         <a href="https://github.com/amacharla15" target="_blank" rel="noreferrer">GitHub</a>
@@ -242,7 +242,7 @@
 
   <section class="section">
     <h2 class="section-title">About</h2>
-    <p class="section-text">I build across the systems stack: production backend services, distributed job processing, LLM inference and GPU performance experiments, data/ML pipelines, native C++ tooling, and agentic AI applications. I care most about measurable performance, correctness, and understanding how the system behaves underneath the API.</p>
+    <p class="section-text">I work across the systems stack: CUDA kernels, LLM inference, Post training, and production backend services. I care about measurable performance, correctness, and how the system behaves underneath the API.</p>
   </section>
 
   <section class="section">
@@ -254,8 +254,8 @@
       <div class="work-location">Chico, CA</div>
       <div class="work-role">Research Assistant — 3D Computer Vision / Sensor Data Processing</div>
       <div class="work-desc"><ul>
-        <li>Building C++/OpenCV tooling around Intel RealSense D455F RGB-D recordings for road-surface analysis and repeatable sensor-processing experiments.</li>
-        <li>Working with depth/color alignment, filtering, road-plane fitting, deviation maps, candidate masks, ROI measurements, overlays, and frame-level reports.</li>
+        <li>Built a C++/OpenCV tooling around Intel RealSense D455F RGB-D recordings for road-surface analysis and repeatable sensor-processing experiments.</li>
+        <li>Worked with depth/color alignment, filtering, road-plane fitting, deviation maps, candidate masks, ROI measurements, overlays, and frame-level reports.</li>
       </ul></div>
       <div class="work-tags"><span class="tag">C++</span><span class="tag">OpenCV</span><span class="tag">Intel RealSense</span><span class="tag">Linux</span></div>
     </div>
@@ -367,14 +367,6 @@
     <p class="section-note">One representative project from each area; the category explorer above links to the broader set.</p>
 
     <div class="project-item">
-      <div class="project-name"><a href="https://github.com/amacharla15/pytorch/tree/main/LLMPort-A100" target="_blank" rel="noreferrer">LLMPort-A100</a></div>
-      <div class="project-meta">ML / Inference Systems</div>
-      <div class="project-desc">Distributed transformer inference experiments spanning vLLM serving, NCCL collectives, tensor-parallel communication, and PyTorch FX / torch.compile operator analysis on 2× A100 GPUs.</div>
-      <div class="project-proof">295.98 tok/s peak measured avg · 172.56 GB/s all-reduce · 252.87 GB/s broadcast</div>
-      <div class="project-links"><a href="https://github.com/amacharla15/pytorch/tree/main/LLMPort-A100" target="_blank" rel="noreferrer">Code ↗</a><a href="https://github.com/amacharla15/pytorch/blob/main/LLMPort-A100/reports/final_summary.md" target="_blank" rel="noreferrer">Results ↗</a></div>
-    </div>
-
-    <div class="project-item">
       <div class="project-name"><a href="https://github.com/amacharla15/Parallel-BPE-Tokenizer" target="_blank" rel="noreferrer">Parallel BPE Tokenizer</a></div>
       <div class="project-meta">GPU / Native Performance</div>
       <div class="project-desc">GPT-2-style byte-level BPE tokenizer implemented in C++ with a reusable thread pool and thread-local cache, benchmarked against tiktoken and Hugging Face Tokenizers.</div>
@@ -388,21 +380,6 @@
       <div class="project-desc">Flash-sale reservation backend with expiring seat holds and booking flows, using transactional PostgreSQL constraints to keep same-seat races correct under concurrent requests.</div>
       <div class="project-proof">Concurrent same-seat race → exactly one hold succeeds · losing requests return 409 · Docker + CI/CD + Azure deployment</div>
       <div class="project-links"><a href="https://github.com/amacharla15/FlashSeatReservation" target="_blank" rel="noreferrer">Repository ↗</a></div>
-    </div>
-
-    <div class="project-item">
-      <div class="project-name"><a href="https://github.com/amacharla15/olist-modern-elt-warehouse" target="_blank" rel="noreferrer">Olist Modern ELT Warehouse</a></div>
-      <div class="project-meta">Data / ML Engineering</div>
-      <div class="project-desc">End-to-end batch ELT warehouse for the Olist e-commerce dataset, landing raw data in Azure Blob Storage, loading Snowflake, transforming and testing with dbt, and surfacing KPIs in Tableau.</div>
-      <div class="project-proof">Azure Blob → Snowflake RAW/STG/MART → dbt models + tests + docs → Tableau dashboards</div>
-      <div class="project-links"><a href="https://github.com/amacharla15/olist-modern-elt-warehouse" target="_blank" rel="noreferrer">Repository ↗</a></div>
-    </div>
-
-    <div class="project-item">
-      <div class="project-name"><a href="https://github.com/amacharla15/University-Marketplace" target="_blank" rel="noreferrer">University Marketplace</a></div>
-      <div class="project-meta">Full Stack</div>
-      <div class="project-desc">Django/PostgreSQL marketplace for campus communities with listings, search and filters, favorites, seller messaging, meetup scheduling, reviews, moderation flows, and containerized deployment.</div>
-      <div class="project-links"><a href="https://github.com/amacharla15/University-Marketplace" target="_blank" rel="noreferrer">Repository ↗</a><a href="https://youtu.be/dD_xrF4pGcw?si=RDeg5Il6kOBvUZpV" target="_blank" rel="noreferrer">Demo ↗</a></div>
     </div>
 
     <div class="project-item">
@@ -448,14 +425,6 @@
       <div class="oss-desc">Fixes Cortex-M lowering for explicitly decomposed Transformer attention so quantized BMM, softmax, and scalar multiplication lower correctly, with Cortex-M55 FVP validation.</div>
       <div class="oss-links"><a href="https://github.com/pytorch/executorch/pull/22796" target="_blank" rel="noreferrer">View upstream PR ↗</a></div>
     </div>
-
-    <div class="oss-item">
-      <div class="oss-name"><a href="https://github.com/tenstorrent/tt-metal/pull/56715" target="_blank" rel="noreferrer">Tenstorrent tt-metal · PR #56715</a></div>
-      <div class="oss-meta"><span class="status">Open PR</span></div>
-      <div class="oss-desc">Refactors Quasar low-level DEST access helpers toward the Blackhole API while preserving Quasar-specific register update behavior and adding typed destination-format handling.</div>
-      <div class="oss-links"><a href="https://github.com/tenstorrent/tt-metal/pull/56715" target="_blank" rel="noreferrer">View upstream PR ↗</a></div>
-    </div>
-  </section>
 
   <section class="section" id="resumes">
     <h2 class="section-title">Resumes</h2>
