@@ -247,7 +247,7 @@
 
 <section class="section" id="open-source">
   <h2 class="section-title">Open Source Contributions</h2>
-  <p class="section-note">Upstream pull requests · 2 merged</p>
+  <p class="section-note">Upstream pull requests · 4 merged</p>
 
   <div class="oss-item">
     <div class="oss-name"><a href="https://github.com/pytorch/executorch/pull/22892" target="_blank" rel="noreferrer">PyTorch ExecuTorch · PR #22892</a></div>
@@ -264,17 +264,56 @@
   </div>
 
   <div class="oss-item">
+    <div class="oss-name"><a href="https://github.com/awslabs/keys_values/pull/155" target="_blank" rel="noreferrer">AWS Labs keys_values · PR #155</a></div>
+    <div class="oss-meta"><span class="status status--merged">Merged</span></div>
+    <div class="oss-desc">Fixes the bitsandbytes KV-cache quantizer so a quantization block never spans more than one (batch, slot) position.</div>
+    <div class="oss-links"><a href="https://github.com/awslabs/keys_values/pull/155" target="_blank" rel="noreferrer">View upstream PR ↗</a></div>
+  </div>
+
+  <div class="oss-item">
+    <div class="oss-name"><a href="https://github.com/aws-neuron/nki-samples/pull/138" target="_blank" rel="noreferrer">AWS Neuron nki-samples · PR #138</a></div>
+    <div class="oss-meta"><span class="status status--merged">Merged</span></div>
+    <div class="oss-desc">Ports the contributed max-pooling kernel to NKI 0.6.0 (Neuron SDK 2.32).</div>
+    <div class="oss-links"><a href="https://github.com/aws-neuron/nki-samples/pull/138" target="_blank" rel="noreferrer">View upstream PR ↗</a></div>
+  </div>
+
+  <div class="oss-item">
+    <div class="oss-name"><a href="https://github.com/awslabs/keys_values/pull/168" target="_blank" rel="noreferrer">AWS Labs keys_values · PR #168</a></div>
+    <div class="oss-meta"><span class="status">Draft PR</span></div>
+    <div class="oss-desc">Tentative KV-cache updates through buffer switching and replay buffers, so tokens the target rejects during speculative decoding can be rolled back without changing the base KVCache API. Replaces #165.</div>
+    <div class="oss-links"><a href="https://github.com/awslabs/keys_values/pull/168" target="_blank" rel="noreferrer">View upstream PR ↗</a></div>
+  </div>
+
+  <div class="oss-item">
+    <div class="oss-name"><a href="https://github.com/awslabs/keys_values/pull/164" target="_blank" rel="noreferrer">AWS Labs keys_values · PR #164</a></div>
+    <div class="oss-meta"><span class="status">Draft PR</span></div>
+    <div class="oss-desc">Draft-model speculative decoding for keys_values, with KV-cache rollback, tests and a benchmark tool. Work in progress: faster than plain decoding with a Qwen3-14B target, slower with Qwen3-8B, and BF16 outputs still differ from plain decoding.</div>
+    <div class="oss-links"><a href="https://github.com/awslabs/keys_values/pull/164" target="_blank" rel="noreferrer">View upstream PR ↗</a></div>
+  </div>
+
+  <div class="oss-item">
     <div class="oss-name"><a href="https://github.com/NVIDIA/cutlass/pull/3615" target="_blank" rel="noreferrer">NVIDIA CUTLASS · PR #3615</a></div>
     <div class="oss-meta"><span class="status">Open PR</span></div>
     <div class="oss-desc">Fixes blockwise FP8 scale indexing under serial split-K, where every slice silently reused slice 0's scales while reporting success. Extends SM89 regression coverage to 4 scale blocks across split-K 1/2/4.</div>
     <div class="oss-links"><a href="https://github.com/NVIDIA/cutlass/pull/3615" target="_blank" rel="noreferrer">View upstream PR ↗</a></div>
   </div>
+</section>
+
+<section class="section" id="writing">
+  <h2 class="section-title">Writing</h2>
 
   <div class="oss-item">
-    <div class="oss-name"><a href="https://github.com/tenstorrent/tt-metal/pull/56715" target="_blank" rel="noreferrer">Tenstorrent tt-metal · PR #56715</a></div>
-    <div class="oss-meta"><span class="status">Open PR</span></div>
-    <div class="oss-desc">Refactors Quasar's DEST-access header to the Blackhole ThreadId-templated API while keeping Quasar's register read-modify-write path, and adds UInt8/UInt16 format handling.</div>
-    <div class="oss-links"><a href="https://github.com/tenstorrent/tt-metal/pull/56715" target="_blank" rel="noreferrer">View upstream PR ↗</a></div>
+    <div class="oss-name"><a href="/blog/draft-model-vs-draft-layer/">A Draft Model or a Draft Layer? How EAGLE Guesses Tokens</a></div>
+    <div class="oss-meta">Oct 2026</div>
+    <div class="oss-desc">Speculative decoding needs a cheap guesser. A separate small model vs EAGLE's single extra layer: what's inside it, what each guess reads from memory, and why the output head costs more than the layer.</div>
+    <div class="oss-links"><a href="/blog/draft-model-vs-draft-layer/">Read post →</a></div>
+  </div>
+
+  <div class="oss-item">
+    <div class="oss-name"><a href="/blog/kv-cache-speculative-decoding/">Guess, Verify, Undo: KV Caches and Speculative Decoding on an H100</a></div>
+    <div class="oss-meta">Oct 2026</div>
+    <div class="oss-desc">Why an H100 writes text slower than you'd expect, what the KV cache saves, and how speculative decoding gets several tokens out of one forward pass, with real numbers for Llama 3.1 8B and Qwen3.</div>
+    <div class="oss-links"><a href="/blog/kv-cache-speculative-decoding/">Read post →</a></div>
   </div>
 </section>
 
@@ -436,7 +475,7 @@
     <div class="edu-item">
       <div class="edu-school">California State University, Chico</div>
       <div class="edu-dates">Dec 2026</div>
-      <div class="edu-degree">Master of Science, Computer Science · GPA 3.95</div>
+      <div class="edu-degree">Master of Science, Computer Science · GPA 3.96</div>
       <div class="edu-detail">Machine Learning · Computer Vision · Data Structures & Algorithms · Software Design · Systems coursework</div>
     </div>
     <div class="edu-item">

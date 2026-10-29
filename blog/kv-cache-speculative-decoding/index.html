@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Guess, Verify, Undo: KV Caches and Speculative Decoding on an H100 · Akshith Macharla</title>
+<meta name="description" content="Why an H100 writes text slower than you'd expect, how the KV cache helps, and how speculative decoding gets several tokens out of one forward pass, with real numbers for Llama 3.1 8B and Qwen3.">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Guess, Verify, Undo: KV Caches and Speculative Decoding on an H100">
+<meta property="og:description" content="For a single user, the theoretical max for Llama 3.1 8B on an H100 is 209 tokens/s. SGLang gets 373. Here's how, and why it can also make things slower.">
+<meta property="og:url" content="https://akshithmacharla.vercel.app/blog/kv-cache-speculative-decoding/">
+<meta property="og:image" content="https://akshithmacharla.vercel.app/blog/kv-cache-speculative-decoding/cover.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://akshithmacharla.vercel.app/blog/kv-cache-speculative-decoding/cover.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #ffffff;
+    --text: #0f172a;
+    --muted: #64748b;
+    --border: #e2e8f0;
+    --badge-bg: #f1f5f9;
+    --link: #0f172a;
+    --line: #94a3b8;
+    --blue: #2563eb;
+    --blue-fill: rgba(37,99,235,.10);
+    --orange: #ea580c;
+    --orange-fill: rgba(234,88,12,.35);
+    --green: #16a34a;
+    --green-fill: rgba(22,163,74,.10);
+    --red: #dc2626;
+    --red-fill: rgba(220,38,38,.10);
+  }
+  html[data-theme="dark"] {
+    --bg: #0d1117;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --border: #30363d;
+    --badge-bg: #161b22;
+    --link: #e6edf3;
+    --line: #6e7681;
+    --blue: #58a6ff;
+    --blue-fill: rgba(88,166,255,.14);
+    --orange: #f0883e;
+    --orange-fill: rgba(240,136,62,.40);
+    --green: #3fb950;
+    --green-fill: rgba(63,185,80,.14);
+    --red: #f85149;
+    --red-fill: rgba(248,81,73,.14);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { color-scheme: light; scroll-behavior: smooth; }
+  html[data-theme="dark"] { color-scheme: dark; }
+  body {
+    font-family: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg); color: var(--text);
+    font-size: 16px; line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+    transition: background .15s ease, color .15s ease;
+  }
+  .container { max-width: 720px; margin: 0 auto; padding: 40px 24px 64px; }
+  a { color: var(--link); text-decoration: underline; text-decoration-color: var(--border); text-underline-offset: 3px; }
+  a:hover { text-decoration-color: var(--text); }
+
+  .top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 40px; }
+  .back { color: var(--muted); font-size: .85rem; text-decoration: none; }
+  .back:hover { color: var(--text); }
+  .theme-toggle {
+    width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center;
+    border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text);
+    font-size: 1rem; cursor: pointer;
+  }
+  .theme-toggle:hover { background: var(--badge-bg); }
+
+  h1 { font-size: 2rem; font-weight: 700; letter-spacing: -0.02em; line-height: 1.25; margin-bottom: 10px; }
+  .meta { color: var(--muted); font-size: .85rem; margin-bottom: 32px; }
+  article h2 { font-size: 1.35rem; font-weight: 700; letter-spacing: -0.01em; line-height: 1.3; margin: 44px 0 14px; }
+  article p { margin: 0 0 16px; }
+  article ul, article ol { margin: 0 0 16px 22px; }
+  article li { margin-bottom: 6px; }
+  article li > ul { margin-top: 6px; margin-bottom: 0; }
+  article strong { font-weight: 600; }
+  code {
+    font-family: 'IBM Plex Mono', monospace; font-size: .85em;
+    background: var(--badge-bg); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px;
+  }
+  pre {
+    background: var(--badge-bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: 14px 16px; margin: 0 0 20px; overflow-x: auto; line-height: 1.55;
+  }
+  pre code { background: none; border: 0; padding: 0; font-size: .82rem; }
+
+  .table-wrap { overflow-x: auto; margin: 0 0 20px; }
+  table { width: 100%; border-collapse: collapse; font-size: .88rem; line-height: 1.5; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { font-weight: 600; border-bottom: 2px solid var(--border); }
+  td code { white-space: nowrap; }
+
+  .fig { margin: 24px 0 28px; }
+  .fig-scroll { overflow-x: auto; }
+  .fig svg { display: block; width: 100%; min-width: 620px; height: auto; font-family: 'IBM Plex Sans', sans-serif; }
+  .fig figcaption { color: var(--muted); font-size: .8rem; margin-top: 8px; text-align: center; }
+  .fig .t { fill: var(--text); }
+  .fig .m { fill: var(--muted); }
+  .fig .ln { stroke: var(--line); stroke-width: 1.25; fill: none; }
+  .fig .ah { fill: var(--line); }
+  .fig .bx { fill: none; stroke: var(--line); stroke-width: 1.25; }
+  .fig .hl { fill: var(--blue-fill); stroke: var(--blue); stroke-width: 2; }
+  .fig .dash { fill: none; stroke: var(--line); stroke-width: 1.25; stroke-dasharray: 4 4; }
+  .fig .zoom { fill: none; stroke: var(--border); stroke-width: 1.25; stroke-dasharray: 4 4; }
+  .fig .grp { fill: none; stroke: var(--border); stroke-width: 1.25; }
+  .fig .qh { fill: var(--blue-fill); stroke: var(--blue); }
+  .fig .kvh { fill: var(--orange-fill); stroke: var(--orange); }
+  .fig .br { fill: none; stroke: var(--line); stroke-width: 1; }
+  .fig .gone { fill: none; stroke: var(--red); stroke-width: 1.25; stroke-dasharray: 3 3; }
+  .fig .strike { stroke: var(--red); stroke-width: 1.25; }
+  .fig .c-ok { fill: var(--green-fill); stroke: var(--green); stroke-width: 1.25; }
+  .fig .c-bad { fill: var(--red-fill); stroke: var(--red); stroke-width: 1.25; }
+  .fig .c-drop { fill: none; stroke: var(--line); stroke-width: 1.25; }
+  .fig .v-ok { fill: var(--green); }
+  .fig .v-bad { fill: var(--red); }
+  .fig .v-drop { fill: var(--muted); }
+
+  .footer { border-top: 1px solid var(--border); margin-top: 48px; padding-top: 16px; color: var(--muted); font-size: .8rem; display: flex; justify-content: space-between; gap: 16px; }
+
+  @media (max-width: 640px) {
+    body { font-size: 15px; }
+    .container { padding: 24px 16px 48px; }
+    h1 { font-size: 1.6rem; }
+    article h2 { font-size: 1.2rem; }
+    .footer { flex-direction: column; gap: 4px; }
+  }
+</style>
+<script>
+  (function () {
+    var saved = null;
+    try { saved = localStorage.getItem('theme'); } catch (e) {}
+    var preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    document.documentElement.dataset.theme = saved || preferred;
+  })();
+</script>
+</head>
+<body>
+<div class="container">
+  <div class="top">
+    <a class="back" href="/">← Akshith Macharla</a>
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Switch theme" title="Switch theme">🌙</button>
+  </div>
+
+  <h1>Guess, Verify, Undo: KV Caches and Speculative Decoding on an H100</h1>
+  <div class="meta">Akshith Macharla · October 28, 2026</div>
+
+  <article>
+<p>AI chatbots write their answers one token at a time (a token is a word or part of a word). Even on an NVIDIA H100, one of the fastest AI chips, this is slower than we'd expect. The reason surprises most people: the chip isn't short on math power. It spends most of its time waiting for the model to be read from memory. This post shows why, with real numbers, and then explains the trick that speeds it up: a small model guesses the next few tokens, and the big model checks all the guesses in one go.</p>
+<p>We build up three ideas in order:</p>
+<ol>
+<li><strong>Decoding is memory-bound.</strong> Generating each token means reading the whole model from GPU memory.</li>
+<li><strong>The KV cache</strong> avoids recomputing the past, but it is more data to store and read.</li>
+<li><strong>Speculative decoding</strong> uses the idle compute to check several guessed tokens at once. Rejected guesses must then be removed from the KV cache, and that is where the real work is.</li>
+</ol>
+<p>At the end we look briefly at how production systems like vLLM, SGLang, Modular MAX and Amazon SageMaker handle this. Later posts go deeper into each part.</p>
+<h2>A few terms first</h2>
+<p>These are the only terms you need for the rest of the post.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Term</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Token</td>
+<td>A word or piece of a word. Models read and write text as tokens: “The cat sat” is three tokens.</td>
+</tr>
+<tr>
+<td>Parameter (weight)</td>
+<td>One learned number inside the model. Llama 3.1 8B has about 8 billion of them.</td>
+</tr>
+<tr>
+<td>Byte (B)</td>
+<td>8 bits. In BF16, the 16-bit number format used here, each parameter takes 2 bytes.</td>
+</tr>
+<tr>
+<td>FLOP</td>
+<td>One floating-point operation: a single multiply (×) or add (+) on decimal numbers.</td>
+</tr>
+<tr>
+<td>FLOP/s</td>
+<td>FLOPs per second: how fast a chip does math. Often written FLOPS.</td>
+</tr>
+<tr>
+<td>HBM</td>
+<td>High-bandwidth memory: the GPU's main memory, where the model's weights are stored.</td>
+</tr>
+<tr>
+<td>Memory bandwidth</td>
+<td>How many bytes per second the GPU can move from HBM to the cores that do the math.</td>
+</tr>
+<tr>
+<td>Forward pass</td>
+<td>One run of the whole model on its input. It ends with a prediction for the next token.</td>
+</tr>
+<tr>
+<td>Decode step</td>
+<td>One forward pass that produces one new token.</td>
+</tr>
+</tbody>
+</table></div>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Prefix</th>
+<th>Means</th>
+<th>Example from this post</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>micro (µ)</td>
+<td>10⁻⁶, one millionth</td>
+<td>16 µs = 0.000016 seconds</td>
+</tr>
+<tr>
+<td>milli (m)</td>
+<td>10⁻³, one thousandth</td>
+<td>4.79 ms = 0.00479 seconds</td>
+</tr>
+<tr>
+<td>kilo (K)</td>
+<td>10³, one thousand</td>
+<td>KiB is the binary version: 1,024 bytes</td>
+</tr>
+<tr>
+<td>giga (G)</td>
+<td>10⁹, one billion</td>
+<td>16 GB = 16 billion bytes</td>
+</tr>
+<tr>
+<td>tera (T)</td>
+<td>10¹², one trillion</td>
+<td>3.35 TB/s = 3.35 trillion bytes per second</td>
+</tr>
+<tr>
+<td>peta (P)</td>
+<td>10¹⁵, one quadrillion</td>
+<td>989 TFLOP/s is almost 1 PFLOP/s</td>
+</tr>
+</tbody>
+</table></div>
+<h2>The model we'll use</h2>
+<p>The examples use Llama 3.1 8B, an open model from Meta. Its text goes in as tokens, and each token becomes a list of 4,096 numbers. Those numbers pass through 32 identical layers, and an output head turns the result into a score for every possible next token.</p>
+<figure class="fig"><div class="fig-scroll"><svg viewBox="0 0 760 568" role="img" aria-label="Every new token runs through all 32 layers of Llama 3.1 8B"><defs><marker id="mA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="ah"/></marker></defs><text x="24" y="30" text-anchor="start" font-size="15" font-weight="600" class="t">Every new token runs through all 32 layers of Llama 3.1 8B</text><text x="24" y="50" text-anchor="start" font-size="11.5" class="m">Writing one token means reading every weight in this picture: about 16 GB.</text><path d="M144 128V152" class="ln" marker-end="url(#mA)"/><path d="M144 208V232" class="ln" marker-end="url(#mA)"/><path d="M144 288V312" class="ln" marker-end="url(#mA)"/><path d="M144 384V408" class="ln" marker-end="url(#mA)"/><path d="M144 464V488" class="ln" marker-end="url(#mA)"/><path d="M264 348H296" class="ln" marker-end="url(#mA)"/><path d="M418 220V252" class="ln" marker-end="url(#mA)"/><path d="M524 168H556" class="ln" marker-start="url(#mA)" marker-end="url(#mA)"/><rect x="24" y="72" width="240" height="56" rx="8" class="bx"/><text x="144" y="96" text-anchor="middle" font-size="13" font-weight="600" class="t">Input text</text><text x="144" y="112" text-anchor="middle" font-size="11.5" class="m">“The cat sat”</text><rect x="24" y="152" width="240" height="56" rx="8" class="bx"/><text x="144" y="176" text-anchor="middle" font-size="13" font-weight="600" class="t">Tokens</text><text x="144" y="192" text-anchor="middle" font-size="11.5" class="m">[The] [ cat] [ sat]</text><rect x="24" y="232" width="240" height="56" rx="8" class="bx"/><text x="144" y="256" text-anchor="middle" font-size="13" font-weight="600" class="t">Embedding</text><text x="144" y="272" text-anchor="middle" font-size="11.5" class="m">each token becomes 4,096 numbers</text><rect x="24" y="312" width="240" height="72" rx="8" class="hl"/><text x="144" y="336" text-anchor="middle" font-size="13" font-weight="600" class="t">32 decoder layers</text><text x="144" y="352" text-anchor="middle" font-size="11.5" class="t">the same layer, 32 times</text><text x="144" y="368" text-anchor="middle" font-size="11.5" class="t">each with its own weights</text><rect x="24" y="408" width="240" height="56" rx="8" class="bx"/><text x="144" y="432" text-anchor="middle" font-size="13" font-weight="600" class="t">Output head</text><text x="144" y="448" text-anchor="middle" font-size="11.5" class="m">a score for each of 128,256 tokens</text><rect x="24" y="488" width="240" height="56" rx="8" class="bx"/><text x="144" y="512" text-anchor="middle" font-size="13" font-weight="600" class="t">Next token</text><text x="144" y="528" text-anchor="middle" font-size="11.5" class="m">“ on”, the highest score</text><rect x="296" y="72" width="440" height="300" rx="8" class="dash"/><text x="312" y="96" text-anchor="start" font-size="13" font-weight="600" class="t">One decoder layer (repeated 32 times)</text><rect x="312" y="116" width="212" height="104" rx="8" class="bx"/><text x="418" y="140" text-anchor="middle" font-size="13" font-weight="600" class="t">Attention</text><text x="418" y="156" text-anchor="middle" font-size="11.5" class="m">32 query heads</text><text x="418" y="172" text-anchor="middle" font-size="11.5" class="m">8 KV heads (keys, values)</text><text x="418" y="188" text-anchor="middle" font-size="11.5" class="m">128 numbers per head</text><text x="418" y="204" text-anchor="middle" font-size="11.5" class="m">4 query heads share a KV head</text><rect x="556" y="116" width="164" height="104" rx="8" class="bx"/><text x="638" y="140" text-anchor="middle" font-size="13" font-weight="600" class="t">KV cache</text><text x="638" y="156" text-anchor="middle" font-size="11.5" class="m">Attention saves the</text><text x="638" y="172" text-anchor="middle" font-size="11.5" class="m">new K and V here and</text><text x="638" y="188" text-anchor="middle" font-size="11.5" class="m">reads all earlier ones</text><text x="638" y="204" text-anchor="middle" font-size="11.5" class="m">4 KiB per token, per layer</text><rect x="312" y="252" width="408" height="72" rx="8" class="bx"/><text x="516" y="276" text-anchor="middle" font-size="13" font-weight="600" class="t">MLP (feed-forward)</text><text x="516" y="292" text-anchor="middle" font-size="11.5" class="m">4,096 → 14,336 → 4,096 numbers per token</text><text x="516" y="308" text-anchor="middle" font-size="11.5" class="m">about 80% of the layer’s weights</text><text x="516" y="352" text-anchor="middle" font-size="11.5" class="m">out: 4,096 numbers per token, to the next layer</text></svg></div><figcaption>Llama 3.1 8B: 32 layers, 32 query heads and 8 KV heads per layer</figcaption></figure>
+
+<p>Every layer has its own weights, so writing even one token means reading all 32 layers: about 16 GB. That cost is what the next section measures. The KV cache box is explained in the section after it.</p>
+<h2>Decoding one token on an H100</h2>
+<p>If only one person is using the GPU, Llama 3.1 8B can write at most about <strong>209 tokens per second</strong> on an H100. The limit isn't how fast the chip does math. It's how fast the chip can read the model from memory.</p>
+<p><strong>The hardware.</strong> The H100 has 80 GB of fast memory (called HBM3) that it can read at <strong>3.35 TB/s</strong>, that is, 3.35 trillion bytes per second. For math, NVIDIA advertises 1,979 TFLOPS, but that number only applies to specially “sparse” models where half the weights are zero. Normal models like Llama get half of that: about <strong>989 TFLOPS</strong>, nearly a quadrillion operations per second.</p>
+<p><strong>The model.</strong> Llama 3.1 8B has 32 layers and 8.03 billion parameters, and works with 4,096 numbers per token. In BF16 each parameter is 2 bytes, so the weights are <strong>16.06 GB</strong>.</p>
+<p><strong>One decode step.</strong> To produce the next token, the GPU has to multiply the newest token's vector by every weight matrix in all 32 layers. Every one of those 16.06 GB has to travel from HBM to the compute cores.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>Work per token</th>
+<th>Time on H100</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Reading the weights</td>
+<td>16.06 GB</td>
+<td>16.06 GB ÷ 3.35 TB/s = <strong>4.79 ms</strong></td>
+</tr>
+<tr>
+<td>Doing the math</td>
+<td>about 2 FLOPs per parameter = 16.06 GFLOP</td>
+<td>16.06 GFLOP ÷ 989 TFLOPS = <strong>0.016 ms</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>The math takes 16 microseconds; reading the weights takes 4.79 milliseconds, about 300 times longer. So the best possible speed is 1 ÷ 4.79 ms ≈ <strong>209 tokens/s</strong>, and the compute cores sit idle more than 99% of the time.</p>
+<p><strong>209 is the best case, not what we can actually get.</strong> In practice the GPU never reads memory at full speed, and every step has some extra overhead. SGLang's docs show this exact model on an H100, serving one user at a time, running at <strong>158 tokens/s</strong>, about three quarters of the limit. Then they turn on speculative decoding (EAGLE-3) and get <strong>373 tokens/s</strong>. That's way above 209. How? The limit is for one token per pass, and speculative decoding gets several tokens out of each pass. That's what the rest of this post is about.</p>
+<p>Another way to see it: the H100 can do about 989 ÷ 3.35 ≈ <strong>295 FLOPs for every byte</strong> it reads before memory stops being the bottleneck. Decoding one token does about <strong>1 FLOP per byte</strong> (16.06 GFLOP over 16.06 GB). It is deep in memory-bound territory.</p>
+<p>This gap is the opportunity that speculative decoding uses later: if we can give the GPU several tokens to process for the same weight read, the extra math is almost free.</p>
+<h2>Why the KV cache exists</h2>
+<p>The KV cache trades recomputation for memory: Llama 3.1 8B stores 128 KiB per token so that it never has to reprocess the past.</p>
+<p><strong>What attention needs.</strong> In every layer, the new token looks back at all earlier tokens. Each earlier token contributes a <strong>key</strong> (used to decide how relevant it is) and a <strong>value</strong> (the information passed along). Both are vectors computed from that token by the layer's weights.</p>
+<p><strong>Without a cache.</strong> Those keys and values would be recomputed from scratch at every step. At a 4,096-token context, producing one new token would mean running the full model over all 4,096 tokens: about 66 TFLOP, or <strong>66 ms</strong> even at the H100's full 989 TFLOPS. That is 14 times slower than the 4.79 ms weight read, and it gets worse with every token.</p>
+<p>Where those numbers come from:</p>
+<ol>
+<li>Running one token through the model costs about 2 FLOPs per parameter (one multiply and one add per weight): 2 × 8.03 billion ≈ <strong>16 GFLOP per token</strong>.</li>
+<li>Without a cache, all 4,096 earlier tokens go through the model again: 4,096 × 16 GFLOP ≈ <strong>66 TFLOP</strong>.</li>
+<li>At the H100's 989 TFLOP per second, that takes 66 ÷ 989 ≈ <strong>66 ms</strong>. Here math really is the limit: each weight read from memory gets used 4,096 times.</li>
+<li>With a cache, only the new token runs, and the step costs the 16 GB weight read: <strong>4.79 ms</strong>. 66 ÷ 4.79 ≈ <strong>14× slower</strong> without the cache.</li>
+</ol>
+<p>The cost also grows with the text:</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Context length</th>
+<th>Without cache, per new token</th>
+<th>With cache, per new token</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>4,096 tokens</td>
+<td>~66 ms</td>
+<td>~5 ms</td>
+</tr>
+<tr>
+<td>8,192 tokens</td>
+<td>~132 ms</td>
+<td>~5 ms</td>
+</tr>
+<tr>
+<td>32,768 tokens</td>
+<td>~530 ms</td>
+<td>~6 ms</td>
+</tr>
+</tbody>
+</table></div>
+<p>This even leaves out the attention math itself, which grows faster still, so the real cost without a cache is a bit higher.</p>
+<p><strong>With a cache.</strong> The keys and values of each token are computed once and stored in GPU memory. A decode step then computes K and V only for the newest token, appends them, and reads the stored ones for attention. The prompt is processed once at the start (the <strong>prefill</strong>) to fill the cache.</p>
+<p><strong>How big it is.</strong> For each token, Llama 3.1 8B stores a key and a value in every layer. Here's where the size comes from:</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Factor</th>
+<th>Value</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>K and V</td>
+<td>2</td>
+<td>each token stores a key and a value</td>
+</tr>
+<tr>
+<td>Layers</td>
+<td>32</td>
+<td>every layer keeps its own cache</td>
+</tr>
+<tr>
+<td>KV heads</td>
+<td>8</td>
+<td>not 32: every 4 query heads share one KV head</td>
+</tr>
+<tr>
+<td>Numbers per head</td>
+<td>128</td>
+<td>4,096 ÷ 32 heads</td>
+</tr>
+<tr>
+<td>Bytes per number</td>
+<td>2</td>
+<td>BF16</td>
+</tr>
+</tbody>
+</table></div>
+<p>2 × 32 × 8 × 128 × 2 = <strong>131,072 bytes = 128 KiB per token</strong> (1 KiB = 1,024 bytes).</p>
+<p>The model has 32 attention heads but only 8 KV heads. Several query heads share one key/value head (grouped-query attention), which makes the cache 4 times smaller than it would otherwise be.</p>
+<figure class="fig"><div class="fig-scroll"><svg viewBox="0 0 760 482" role="img" aria-label="Inside each of the 32 layers, 32 query heads share 8 KV heads"><defs><marker id="gA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="ah"/></marker></defs><text x="24" y="30" text-anchor="start" font-size="15" font-weight="600" class="t">Inside each of the 32 layers, 32 query heads share 8 KV heads</text><text x="24" y="50" text-anchor="start" font-size="11.5" class="m">Every 4 query heads read the same key/value head, so the cache stores 8 heads per layer, not 32.</text><rect x="24" y="90" width="80" height="100" rx="8" class="bx"/><text x="64" y="134" text-anchor="middle" font-size="13" font-weight="600" class="t">1 token</text><text x="64" y="152" text-anchor="middle" font-size="11.5" class="m">4,096</text><text x="64" y="168" text-anchor="middle" font-size="11.5" class="m">numbers</text><rect x="144" y="90" width="64" height="100" rx="8" class="hl"/><text x="176" y="144" text-anchor="middle" font-size="11.5" font-weight="600" class="t">Layer 1</text><rect x="236" y="90" width="64" height="100" rx="8" class="bx"/><text x="268" y="144" text-anchor="middle" font-size="11.5" class="t">Layer 2</text><rect x="328" y="90" width="64" height="100" rx="8" class="bx"/><text x="360" y="144" text-anchor="middle" font-size="11.5" class="t">Layer 3</text><rect x="456" y="90" width="64" height="100" rx="8" class="bx"/><text x="488" y="144" text-anchor="middle" font-size="11.5" class="t">Layer 32</text><text x="424" y="144" text-anchor="middle" font-size="13" font-weight="600" class="m">…</text><rect x="556" y="115" width="180" height="50" rx="8" class="bx"/><text x="646" y="136" text-anchor="middle" font-size="13" font-weight="600" class="t">Output head</text><text x="646" y="152" text-anchor="middle" font-size="11.5" class="m">scores for the next token</text><path d="M104 140H142" class="ln" marker-end="url(#gA)"/><path d="M208 140H234" class="ln" marker-end="url(#gA)"/><path d="M300 140H326" class="ln" marker-end="url(#gA)"/><path d="M438 140H454" class="ln" marker-end="url(#gA)"/><path d="M520 140H554" class="ln" marker-end="url(#gA)"/><path d="M392 140H410" class="ln"/><path d="M144 190L24 236M208 190L736 236" class="zoom"/><rect x="24" y="236" width="712" height="196" rx="8" class="bx"/><text x="40" y="262" text-anchor="start" font-size="13" font-weight="600" class="t">Attention in one layer (the same in all 32)</text><rect x="42" y="278" width="80" height="112" rx="6" class="grp"/><rect x="52" y="290" width="8" height="56" rx="2" class="qh"/><rect x="64" y="290" width="8" height="56" rx="2" class="qh"/><rect x="76" y="290" width="8" height="56" rx="2" class="qh"/><rect x="88" y="290" width="8" height="56" rx="2" class="qh"/><rect x="102" y="290" width="12" height="56" rx="2" class="kvh"/><path d="M56 346V354H108V346M68 346V354M80 346V354M92 346V354" class="br"/><text x="82" y="376" text-anchor="middle" font-size="11.5" class="m">group 1</text><rect x="127" y="278" width="80" height="112" rx="6" class="grp"/><rect x="137" y="290" width="8" height="56" rx="2" class="qh"/><rect x="149" y="290" width="8" height="56" rx="2" class="qh"/><rect x="161" y="290" width="8" height="56" rx="2" class="qh"/><rect x="173" y="290" width="8" height="56" rx="2" class="qh"/><rect x="187" y="290" width="12" height="56" rx="2" class="kvh"/><path d="M141 346V354H193V346M153 346V354M165 346V354M177 346V354" class="br"/><text x="167" y="376" text-anchor="middle" font-size="11.5" class="m">group 2</text><rect x="212" y="278" width="80" height="112" rx="6" class="grp"/><rect x="222" y="290" width="8" height="56" rx="2" class="qh"/><rect x="234" y="290" width="8" height="56" rx="2" class="qh"/><rect x="246" y="290" width="8" height="56" rx="2" class="qh"/><rect x="258" y="290" width="8" height="56" rx="2" class="qh"/><rect x="272" y="290" width="12" height="56" rx="2" class="kvh"/><path d="M226 346V354H278V346M238 346V354M250 346V354M262 346V354" class="br"/><text x="252" y="376" text-anchor="middle" font-size="11.5" class="m">group 3</text><rect x="297" y="278" width="80" height="112" rx="6" class="grp"/><rect x="307" y="290" width="8" height="56" rx="2" class="qh"/><rect x="319" y="290" width="8" height="56" rx="2" class="qh"/><rect x="331" y="290" width="8" height="56" rx="2" class="qh"/><rect x="343" y="290" width="8" height="56" rx="2" class="qh"/><rect x="357" y="290" width="12" height="56" rx="2" class="kvh"/><path d="M311 346V354H363V346M323 346V354M335 346V354M347 346V354" class="br"/><text x="337" y="376" text-anchor="middle" font-size="11.5" class="m">group 4</text><rect x="382" y="278" width="80" height="112" rx="6" class="grp"/><rect x="392" y="290" width="8" height="56" rx="2" class="qh"/><rect x="404" y="290" width="8" height="56" rx="2" class="qh"/><rect x="416" y="290" width="8" height="56" rx="2" class="qh"/><rect x="428" y="290" width="8" height="56" rx="2" class="qh"/><rect x="442" y="290" width="12" height="56" rx="2" class="kvh"/><path d="M396 346V354H448V346M408 346V354M420 346V354M432 346V354" class="br"/><text x="422" y="376" text-anchor="middle" font-size="11.5" class="m">group 5</text><rect x="467" y="278" width="80" height="112" rx="6" class="grp"/><rect x="477" y="290" width="8" height="56" rx="2" class="qh"/><rect x="489" y="290" width="8" height="56" rx="2" class="qh"/><rect x="501" y="290" width="8" height="56" rx="2" class="qh"/><rect x="513" y="290" width="8" height="56" rx="2" class="qh"/><rect x="527" y="290" width="12" height="56" rx="2" class="kvh"/><path d="M481 346V354H533V346M493 346V354M505 346V354M517 346V354" class="br"/><text x="507" y="376" text-anchor="middle" font-size="11.5" class="m">group 6</text><rect x="552" y="278" width="80" height="112" rx="6" class="grp"/><rect x="562" y="290" width="8" height="56" rx="2" class="qh"/><rect x="574" y="290" width="8" height="56" rx="2" class="qh"/><rect x="586" y="290" width="8" height="56" rx="2" class="qh"/><rect x="598" y="290" width="8" height="56" rx="2" class="qh"/><rect x="612" y="290" width="12" height="56" rx="2" class="kvh"/><path d="M566 346V354H618V346M578 346V354M590 346V354M602 346V354" class="br"/><text x="592" y="376" text-anchor="middle" font-size="11.5" class="m">group 7</text><rect x="637" y="278" width="80" height="112" rx="6" class="grp"/><rect x="647" y="290" width="8" height="56" rx="2" class="qh"/><rect x="659" y="290" width="8" height="56" rx="2" class="qh"/><rect x="671" y="290" width="8" height="56" rx="2" class="qh"/><rect x="683" y="290" width="8" height="56" rx="2" class="qh"/><rect x="697" y="290" width="12" height="56" rx="2" class="kvh"/><path d="M651 346V354H703V346M663 346V354M675 346V354M687 346V354" class="br"/><text x="677" y="376" text-anchor="middle" font-size="11.5" class="m">group 8</text><rect x="56" y="404" width="10" height="14" rx="2" class="qh"/><text x="74" y="415" text-anchor="start" font-size="11.5" class="t">query head: 32 per layer</text><rect x="300" y="404" width="12" height="14" rx="2" class="kvh"/><text x="320" y="415" text-anchor="start" font-size="11.5" class="t">key/value head: 8 per layer, the only heads in the KV cache</text><text x="24" y="462" text-anchor="start" font-size="11.5" class="m">Cache per token: 8 KV heads × 128 numbers × 2 (K and V) × 2 bytes = 4 KiB per layer; × 32 layers = 128 KiB.</text></svg></div><figcaption>Grouped-query attention: 32 query heads in 8 groups of 4</figcaption></figure>
+
+<p>Only the 8 KV heads are stored, which is where the 128 KiB per token comes from.</p>
+<p>The cache also has to be read at every step, on top of the weights (GB here means 10⁹ bytes; KiB means 1,024 bytes):</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Context length</th>
+<th>KV cache size</th>
+<th>Decode step (weights + cache read)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1,000 tokens</td>
+<td>0.13 GB</td>
+<td>4.83 ms</td>
+</tr>
+<tr>
+<td>8,192 tokens</td>
+<td>1.07 GB</td>
+<td>5.11 ms</td>
+</tr>
+<tr>
+<td>32,768 tokens</td>
+<td>4.29 GB</td>
+<td>6.08 ms</td>
+</tr>
+<tr>
+<td>131,072 tokens</td>
+<td>17.2 GB</td>
+<td>9.92 ms</td>
+</tr>
+</tbody>
+</table></div>
+<p>At the model's full 128K context, one user's cache is larger than the model itself, and the step takes twice as long.</p>
+<p><strong>With many users.</strong> Serving many users at once (batching) shares one weight read across all of them, but every user has their own cache. After the 16 GB of weights, the H100 has about 64 GB left: room for roughly 59 users at 8K tokens each, or about 488,000 tokens in total. That is an upper bound: activations, the CUDA context and the serving framework's own reserve take memory too (vLLM uses 90% of GPU memory by default). Even so, at scale the KV cache, not the weights, decides how many users fit on a GPU. That is why production systems put so much effort into its design.</p>
+<h2>Speculative decoding: four guesses, one forward pass</h2>
+<p>Normal generation is autoregressive: the model writes one token per decode step, and every decode step is a full forward pass that reads all the weights. So four tokens means four forward passes, one after another, because each token depends on the one before it. Speculative decoding changes that: a small model guesses four tokens, and the big model checks all four in a single forward pass. Four tokens, one weight read.</p>
+<p><strong>The two models.</strong> For this part we switch from Llama to Qwen3, because Qwen3 comes with a small sibling model that uses the same tokenizer, and the draft needs that. The <strong>target</strong> is the model whose output we want: Qwen3-8B, 36 layers, 16.4 GB in BF16. The <strong>draft</strong> is the small model that guesses ahead: Qwen3-0.6B, 28 layers, 1.2 GB. Each draft step reads about 14 times less data than a target step.</p>
+<p><strong>Without speculation,</strong> four tokens take four target passes: 4 × 4.89 ms ≈ <strong>19.6 ms</strong>.</p>
+<p><strong>With speculation,</strong> the draft guesses four tokens at a time. Four is just an example: the number of guesses is a setting, and engines often use somewhere between 2 and 5.</p>
+<p>Say the text so far is “The cat” and the right continuation is “ sat on the mat”. Tokens are written with their leading space, the way tokenizers store them: “ sat” is one token. Below, a dot marks that space: <code>·sat</code>.</p>
+<ol>
+<li><strong>Draft four tokens.</strong> The 0.6B model runs four steps, one after another, and guesses <code>·sat</code>, <code>·on</code>, <code>·a</code>, <code>·mat</code>.</li>
+<li><strong>Verify in one pass.</strong> The target runs once on five positions together: the last accepted token <code>·cat</code> plus the four guesses. A causal mask lets each position see the target's KV cache plus only the positions before it, so in this single pass:<ul>
+<li>the <code>·cat</code> position predicts what follows “The cat”, which checks guess 1 (<code>·sat</code>);</li>
+<li>the <code>·sat</code> position sees “The cat sat”, which checks guess 2 (<code>·on</code>);</li>
+<li>the <code>·on</code> position checks guess 3 (<code>·a</code>), and so on up to the last position, which predicts a bonus token after all four guesses.</li>
+</ul>
+</li>
+<li><strong>Accept or reject, left to right.</strong> The target agrees with <code>·sat</code> and <code>·on</code>. At guess 3 it wanted <code>·the</code>, not <code>·a</code>. So <code>·a</code> is rejected, <code>·mat</code> after it is thrown away too (it was built on a wrong token), and the target's own <code>·the</code> is used instead.</li>
+</ol>
+<pre><code class="language-text">Target input:      cat     sat     on      a       mat
+Target predicts:   sat     on      the     (ignored after the first miss)
+Draft guessed:     sat     on      a       mat
+Result:            keep    keep    miss: use &quot;the&quot;, drop &quot;a&quot; and &quot;mat&quot;
+</code></pre>
+<p>Result: three tokens (“sat on the”) from <strong>one</strong> target pass. Verifying five positions instead of one costs almost nothing extra: the weights are read once either way, and the extra math is microseconds.</p>
+<figure class="fig"><div class="fig-scroll"><svg viewBox="0 0 760 432" role="img" aria-label="The draft guesses ahead, the target checks, both caches undo the miss"><defs><marker id="sA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="ah"/></marker></defs><text x="24" y="30" text-anchor="start" font-size="15" font-weight="600" class="t">The draft guesses ahead, the target checks, both caches undo the miss</text><text x="24" y="50" text-anchor="start" font-size="11.5" class="m">Text so far: “The cat”. The draft guesses “sat on a mat”; the target keeps “sat on” and writes “the”.</text><rect x="24" y="70" width="268" height="80" rx="8" class="bx"/><text x="40" y="92" text-anchor="start" font-size="13" font-weight="600" class="t">Target KV cache</text><rect x="40" y="104" width="36" height="28" rx="4" class="bx"/><text x="58" y="122" text-anchor="middle" font-size="11.5" class="t">The</text><rect x="80" y="104" width="36" height="28" rx="4" class="bx"/><text x="98" y="122" text-anchor="middle" font-size="11.5" class="t">cat</text><rect x="120" y="104" width="36" height="28" rx="4" class="bx"/><text x="138" y="122" text-anchor="middle" font-size="11.5" class="t">sat</text><rect x="160" y="104" width="36" height="28" rx="4" class="bx"/><text x="178" y="122" text-anchor="middle" font-size="11.5" class="t">on</text><rect x="200" y="104" width="36" height="28" rx="4" class="gone"/><text x="218" y="122" text-anchor="middle" font-size="11.5" class="m">a</text><line x1="204" y1="128" x2="232" y2="108" class="strike"/><rect x="240" y="104" width="36" height="28" rx="4" class="gone"/><text x="258" y="122" text-anchor="middle" font-size="11.5" class="m">mat</text><line x1="244" y1="128" x2="272" y2="108" class="strike"/><text x="24" y="168" text-anchor="start" font-size="11.5" class="m">“a” and “mat” removed after the miss</text><line x1="292" y1="110" x2="328" y2="110" class="ln"/><circle cx="380" cy="110" r="52" class="hl"/><text x="380" y="106" text-anchor="middle" font-size="13" font-weight="600" class="t">Target</text><text x="380" y="124" text-anchor="middle" font-size="11.5" class="t">Qwen3-8B</text><rect x="24" y="310" width="268" height="80" rx="8" class="bx"/><text x="40" y="332" text-anchor="start" font-size="13" font-weight="600" class="t">Draft KV cache</text><rect x="40" y="344" width="36" height="28" rx="4" class="bx"/><text x="58" y="362" text-anchor="middle" font-size="11.5" class="t">The</text><rect x="80" y="344" width="36" height="28" rx="4" class="bx"/><text x="98" y="362" text-anchor="middle" font-size="11.5" class="t">cat</text><rect x="120" y="344" width="36" height="28" rx="4" class="bx"/><text x="138" y="362" text-anchor="middle" font-size="11.5" class="t">sat</text><rect x="160" y="344" width="36" height="28" rx="4" class="bx"/><text x="178" y="362" text-anchor="middle" font-size="11.5" class="t">on</text><rect x="200" y="344" width="36" height="28" rx="4" class="gone"/><text x="218" y="362" text-anchor="middle" font-size="11.5" class="m">a</text><line x1="204" y1="368" x2="232" y2="348" class="strike"/><text x="24" y="408" text-anchor="start" font-size="11.5" class="m">“a” removed; “mat” was never written</text><line x1="292" y1="350" x2="340" y2="350" class="ln"/><circle cx="380" cy="350" r="40" class="bx"/><text x="380" y="346" text-anchor="middle" font-size="13" font-weight="600" class="t">Draft</text><text x="380" y="362" text-anchor="middle" font-size="11.5" class="t">Qwen3-0.6B</text><path d="M380 310V230H446" class="ln" marker-end="url(#sA)"/><path d="M590 210V110H433" class="ln" marker-end="url(#sA)"/><text x="372" y="266" text-anchor="end" font-size="11.5" class="m">draft guesses</text><text x="372" y="282" text-anchor="end" font-size="11.5" class="m">4 tokens</text><text x="602" y="156" text-anchor="start" font-size="11.5" class="m">target checks all 4</text><text x="602" y="172" text-anchor="start" font-size="11.5" class="m">in one forward pass</text><rect x="450" y="210" width="64" height="40" rx="6" class="c-ok"/><text x="482" y="234" text-anchor="middle" font-size="13" class="t">sat</text><text x="482" y="268" text-anchor="middle" font-size="11.5" class="m">T1</text><text x="482" y="286" text-anchor="middle" font-size="11.5" font-weight="600" class="v-ok">keep</text><rect x="522" y="210" width="64" height="40" rx="6" class="c-ok"/><text x="554" y="234" text-anchor="middle" font-size="13" class="t">on</text><text x="554" y="268" text-anchor="middle" font-size="11.5" class="m">T2</text><text x="554" y="286" text-anchor="middle" font-size="11.5" font-weight="600" class="v-ok">keep</text><rect x="594" y="210" width="64" height="40" rx="6" class="c-bad"/><text x="626" y="234" text-anchor="middle" font-size="13" class="t">a</text><text x="626" y="268" text-anchor="middle" font-size="11.5" class="m">T3</text><text x="626" y="286" text-anchor="middle" font-size="11.5" font-weight="600" class="v-bad">miss</text><rect x="666" y="210" width="64" height="40" rx="6" class="c-drop"/><text x="698" y="234" text-anchor="middle" font-size="13" class="m">mat</text><text x="698" y="268" text-anchor="middle" font-size="11.5" class="m">T4</text><text x="698" y="286" text-anchor="middle" font-size="11.5" font-weight="600" class="v-drop">drop</text><text x="590" y="314" text-anchor="middle" font-size="11.5" class="m">the target writes “the” in place of “a”</text></svg></div><figcaption>Draft and target, each with its own KV cache, on the cat example</figcaption></figure>
+
+<p>Each model keeps its own KV cache, so after the miss both caches hold entries for words that are no longer in the text. Cleaning those up is the next section.</p>
+<p><strong>What one round costs.</strong> A round means: the draft model guesses 4 tokens, and the target checks all 4 in one pass.</p>
+<p>In the cat example, the target accepted 2 of the 4 guesses (“ sat” and “ on”) and added 1 token of its own (“ the”, in place of the wrong guess “ a”). So one round gave us <strong>2 + 1 = 3 tokens</strong>.</p>
+<p>Every round ends the same way: you keep the guesses the target agreed with, plus 1 token the target writes itself. If a guess is wrong, the target's token replaces it. If all four guesses are right, the target still adds one more token after them for free, because its check pass already predicted what comes next.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>What happens</th>
+<th>Guesses kept</th>
+<th>Target's own token</th>
+<th>Tokens this round</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>The first guess is wrong</td>
+<td>0</td>
+<td>1</td>
+<td>1</td>
+</tr>
+<tr>
+<td>Our example: the third guess is wrong</td>
+<td>2</td>
+<td>1</td>
+<td>3</td>
+</tr>
+<tr>
+<td>All four guesses are right</td>
+<td>4</td>
+<td>1</td>
+<td>5</td>
+</tr>
+</tbody>
+</table></div>
+<p>So even in the worst case, a round still gives 1 token (the target's own), the same as normal decoding.</p>
+<p>Now compare three ways of getting those same 3 tokens:</p>
+<ol>
+<li><strong>No draft model at all.</strong> The target writes all 3 tokens itself, one forward pass per token. Each pass takes 4.9 ms, the time to read Qwen3-8B's 16.4 GB of weights at 3.35 TB/s.</li>
+<li><strong>A draft model running at its top speed.</strong> Each guess takes 0.36 ms, the time to read the draft's 1.2 GB of weights. A real draft never runs this fast; this is the best it could ever do.</li>
+<li><strong>A draft model that takes 3 ms per guess.</strong> A model this small wastes time on every step starting a few hundred tiny GPU jobs, and that can cost more than the actual work. 3 ms is an example of what that looks like.</li>
+</ol>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>1. No draft model</th>
+<th>2. Draft at top speed</th>
+<th>3. Draft at 3 ms per guess</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Guessing 4 tokens</td>
+<td>none</td>
+<td>4 × 0.36 = 1.4 ms</td>
+<td>4 × 3 = 12 ms</td>
+</tr>
+<tr>
+<td>Target passes</td>
+<td>3 × 4.9 = 14.7 ms</td>
+<td>1 × 4.9 = 4.9 ms</td>
+<td>1 × 4.9 = 4.9 ms</td>
+</tr>
+<tr>
+<td><strong>Total for 3 tokens</strong></td>
+<td><strong>14.7 ms</strong></td>
+<td><strong>6.3 ms</strong></td>
+<td><strong>16.9 ms</strong></td>
+</tr>
+<tr>
+<td><strong>Per token</strong></td>
+<td><strong>4.9 ms</strong></td>
+<td><strong>2.1 ms</strong></td>
+<td><strong>5.6 ms</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>With a draft at top speed, we get the 3 tokens more than twice as fast. With a draft at 3 ms per guess, it's slower than not using a draft at all. The tipping point is about 2.45 ms per guess. So speculative decoding only pays off when guessing is cheap, and that's what the newer methods later in this post compete on.</p>
+<p><strong>Why the answer doesn't change.</strong> A guess only survives if the big model agrees with it. With greedy decoding, agreeing means it's the big model's top pick. With sampling, a guess is kept or thrown out based on how likely each model thought it was, and when one is thrown out, the replacement is chosen to make up the difference. The math works out so the text comes out as if the big model had written it alone. The small model only changes how fast you get there. (The exact rule: a guess is kept with probability min(1, p/q), where p and q are how likely the big and the small model rated it; if it's rejected, the replacement is sampled from what's left over, max(0, p − q).)</p>
+<p><strong>How much it helps.</strong> That depends on how often the guesses are right. If each guess is right 75% of the time:</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Guesses per round</th>
+<th>Tokens per round, on average</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>1.75</td>
+</tr>
+<tr>
+<td>2</td>
+<td>2.31</td>
+</tr>
+<tr>
+<td>4</td>
+<td>3.05</td>
+</tr>
+<tr>
+<td>8</td>
+<td>3.70</td>
+</tr>
+</tbody>
+</table></div>
+<p>More guesses help less and less, because a guess only counts if every guess before it was right too. And a round only pays off if the guessing is cheap, which is what the newer methods later in this post compete on.</p>
+<h2>When the target rejects: cleaning up two caches</h2>
+<p>Every rejected guess leaves wrong keys and values behind in both the target's and the draft's KV cache, and they must be removed before the next round.</p>
+<p>Take the example above. Before the round, both caches hold only “The”. Here is what each model wrote during the round:</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Cache</th>
+<th>Wrote K/V for</th>
+<th>Keep</th>
+<th>Remove</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Target (Qwen3-8B, 144 KiB per token)</td>
+<td><code>·cat</code> <code>·sat</code> <code>·on</code> <code>·a</code> <code>·mat</code></td>
+<td><code>·cat</code> <code>·sat</code> <code>·on</code></td>
+<td><code>·a</code> <code>·mat</code> (288 KiB)</td>
+</tr>
+<tr>
+<td>Draft (Qwen3-0.6B, 112 KiB per token)</td>
+<td><code>·cat</code> <code>·sat</code> <code>·on</code> <code>·a</code></td>
+<td><code>·cat</code> <code>·sat</code> <code>·on</code></td>
+<td><code>·a</code> (112 KiB)</td>
+</tr>
+</tbody>
+</table></div>
+<p>The draft never wrote K/V for <code>·mat</code>: it produced <code>·mat</code> as the output of its fourth step but never fed it back in. The accepted correction <code>·the</code> is in neither cache yet; both models process it as the first input of the next round.</p>
+<p>The opposite case matters too. If all four guesses are accepted, the target's cache holds all four guesses, but the draft's is two tokens behind: it is missing <code>·mat</code> (never fed back) and the target's bonus token. The next round must run the draft on both before it can guess again.</p>
+<p>If the wrong entries stay, the next round would read an <code>·a</code> that isn't in the text, and the output would quietly go wrong. So the rule is simple: the next round must never see rejected entries.</p>
+<p>There are three common ways to do this:</p>
+<ol>
+<li><strong>Move a counter back.</strong> Keep a count of how many tokens in the cache are real. After a miss, lower the count by the number of rejected tokens. The wrong entries are still in memory, but nothing reads them, and the next round writes over them. vLLM works this way.</li>
+<li><strong>Write guesses somewhere temporary.</strong> Put the guesses' K/V in a scratch area, and copy only the accepted ones into the real cache.</li>
+<li><strong>Fix the draft's cache too.</strong> Remove the draft's rejected entries. If all the guesses were accepted, feed the draft the tokens it missed. SGLang does this after every check.</li>
+</ol>
+<p>One more rule: never share a guess before it's checked. vLLM lets different requests reuse each other's cached prompts, and it only shares tokens the target has confirmed.</p>
+<p><strong>Some methods make this harder.</strong> Methods like EAGLE-2 guess a small tree of options at each position instead of a single line, so the accepted tokens end up scattered in the cache instead of sitting neatly at the end. <strong>I'll explain how these methods work, and compare them, in an upcoming post.</strong></p>
+<p>Moving a counter back is the cheapest fix, but it only works if the wrong entries sit at the end and writing them didn't overwrite anything we still need. Whether that's true depends on how the KV cache is built, which is the next section.</p>
+<h2>KV cache designs in production</h2>
+<p>Every KV cache design trades memory for something, and the designs that throw tokens away are exactly the ones where undoing a rejected guess gets hard.</p>
+<p>Some designs keep every past token and only change how it's stored. Others throw tokens away to save memory. That difference decides how hard it is to undo a wrong guess:</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Design</th>
+<th>What it does</th>
+<th>Undoing a wrong guess</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Dense</td>
+<td>One block of memory per user, every token kept</td>
+<td>Easy: move the counter back</td>
+</tr>
+<tr>
+<td>Paged (vLLM)</td>
+<td>Memory split into small pages, the way an operating system does it, so less is wasted</td>
+<td>Easy: move the counter back</td>
+</tr>
+<tr>
+<td>Prefix sharing (SGLang)</td>
+<td>Users with the same prompt share its cache</td>
+<td>Easy, as long as guesses are never shared before they're checked</td>
+</tr>
+<tr>
+<td>Grouped-query attention (Llama 3, Qwen3)</td>
+<td>Several query heads share one KV head, so the cache is smaller (4× for Llama 3.1 8B)</td>
+<td>Easy: every token is still kept</td>
+</tr>
+<tr>
+<td>Latent compression (DeepSeek)</td>
+<td>One compressed vector per token instead of full K and V</td>
+<td>Easy: every token is still kept</td>
+</tr>
+<tr>
+<td>Quantized (FP8, KIVI)</td>
+<td>K and V stored with fewer bits</td>
+<td>Usually easy; depends on when values get compressed</td>
+</tr>
+<tr>
+<td>Sliding window (Mistral)</td>
+<td>Keeps only the most recent tokens</td>
+<td><strong>Hard:</strong> guesses push out tokens you still need</td>
+</tr>
+<tr>
+<td>Sinks + recent (StreamingLLM)</td>
+<td>Keeps the first few tokens plus the most recent ones</td>
+<td><strong>Hard:</strong> same problem</td>
+</tr>
+<tr>
+<td>Importance eviction (H2O)</td>
+<td>Keeps recent tokens plus the ones that got the most attention</td>
+<td><strong>Hardest:</strong> guesses also change which tokens get thrown out</td>
+</tr>
+</tbody>
+</table></div>
+<p>The last column is my own reasoning, based on how each design stores tokens. The papers that introduced these designs don't cover speculative decoding, so none of them tested this.</p>
+<p><strong>The problem in miniature.</strong> Take a cache that keeps only the last three tokens, and write the four guesses into it:</p>
+<pre><code class="language-text">Committed:        [A]  [B]  [C]
+write d1   -&gt;     [B]  [C]  [d1]
+write d2   -&gt;     [C]  [d1] [d2]
+write d3   -&gt;     [d1] [d2] [d3]
+write d4   -&gt;     [d2] [d3] [d4]
+
+Target accepts d1, rejects d2.
+Correct cache:    [B]  [C]  [d1]
+What is left:     [d2] [d3] [d4]
+</code></pre>
+<p>No counter can bring back B and C. They were pushed out by guesses that turned out to be wrong.</p>
+<p>Every cache that keeps only some tokens, like sliding windows and H2O, runs into this in some form. The usual fix is to write guesses somewhere temporary and commit only the ones the target accepts. I'll go through each of these cache designs, and how they handle rejected guesses, in an upcoming post.</p>
+<h2>Speculative decoding methods in production</h2>
+<p>Production engines don't all guess the same way, but the trend is simple: make each guess cheaper.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Who does the guessing</th>
+<th>In short</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Draft model</td>
+<td>A separate small model, like Qwen3-0.6B for Qwen3-8B</td>
+<td>Easy to set up, but every guess runs a whole model</td>
+</tr>
+<tr>
+<td>N-gram</td>
+<td>No model: it copies what came after the same words earlier in the text</td>
+<td>Almost free; works best when the output repeats the input</td>
+</tr>
+<tr>
+<td>EAGLE</td>
+<td>One extra layer that reads the big model's own hidden state</td>
+<td>Cheap and accurate, but trained for one specific model</td>
+</tr>
+<tr>
+<td>MTP</td>
+<td>Extra prediction layers built into the model when it's trained</td>
+<td>Used by DeepSeek-V3</td>
+</tr>
+<tr>
+<td>P-EAGLE, DFlash</td>
+<td>Small drafters that guess several tokens in one pass</td>
+<td>No more guessing one token at a time</td>
+</tr>
+</tbody>
+</table></div>
+<p>vLLM and SGLang support most of these. Modular MAX supports EAGLE, MTP and DFlash for specific models, and Amazon SageMaker can train an EAGLE drafter on your own data.</p>
+<p><strong>Where it stops helping.</strong> Speculative decoding uses spare GPU time. With one user, the GPU spends most of its time waiting on memory, so there's plenty to spare. With many users at once, the GPU is already busy, and every wrong guess is wasted work. That's why MAX lets you set fewer guesses for bigger batches, and SGLang can change the number of guesses while it runs, based on how many are being accepted.</p>
+<p>I'll explain how these methods work, and compare them, in an upcoming post.</p>
+<h2>Takeaways</h2>
+<ul>
+<li><strong>Writing text for one user is limited by memory, not math.</strong> Llama 3.1 8B has to read all 16 GB of its weights for every token, so an H100 tops out around 209 tokens per second.</li>
+<li><strong>The KV cache saves the past so the model doesn't redo work.</strong> For Llama 3.1 8B that's 128 KiB per token. With long texts or many users, the cache, not the model, decides how many people fit on one GPU.</li>
+<li><strong>Speculative decoding lets a small model guess and the big model check.</strong> The big model checks several guesses in one pass. The output stays the same; it just arrives faster.</li>
+<li><strong>It only helps if guessing is cheap.</strong> A slow draft can make things slower than not guessing at all.</li>
+<li><strong>Every wrong guess has to be removed from both caches.</strong> That's easy when the cache keeps every token, and hard when it throws tokens away.</li>
+<li><strong>Newer methods all chase the same goal:</strong> EAGLE, MTP, P-EAGLE and DFlash each make guessing cheaper.</li>
+</ul>
+<p><strong>Next post:</strong> <a href="/blog/draft-model-vs-draft-layer/">a closer look at EAGLE</a>: what's inside that one extra layer, and why it guesses better than a separate small model.</p>
+<h2>References</h2>
+<ul>
+<li><a href="https://www.nvidia.com/en-us/data-center/h100/" target="_blank" rel="noreferrer">NVIDIA H100</a></li>
+<li><a href="https://arxiv.org/abs/2211.17192" target="_blank" rel="noreferrer">Fast Inference from Transformers via Speculative Decoding</a>, Leviathan et al., 2023</li>
+<li><a href="https://arxiv.org/abs/2302.01318" target="_blank" rel="noreferrer">Accelerating Large Language Model Decoding with Speculative Sampling</a>, Chen et al., 2023</li>
+<li><a href="https://arxiv.org/abs/2401.15077" target="_blank" rel="noreferrer">EAGLE</a>, <a href="https://arxiv.org/abs/2503.01840" target="_blank" rel="noreferrer">EAGLE-3</a>, <a href="https://arxiv.org/abs/2602.01469" target="_blank" rel="noreferrer">P-EAGLE</a>, <a href="https://arxiv.org/abs/2602.06036" target="_blank" rel="noreferrer">DFlash</a>, <a href="https://arxiv.org/abs/2412.19437" target="_blank" rel="noreferrer">DeepSeek-V3 (MTP)</a></li>
+<li><a href="https://arxiv.org/abs/2305.13245" target="_blank" rel="noreferrer">GQA</a>, <a href="https://arxiv.org/abs/2405.04434" target="_blank" rel="noreferrer">DeepSeek-V2 (MLA)</a>, <a href="https://arxiv.org/abs/2310.06825" target="_blank" rel="noreferrer">Mistral 7B</a>, <a href="https://arxiv.org/abs/2309.17453" target="_blank" rel="noreferrer">StreamingLLM</a>, <a href="https://arxiv.org/abs/2306.14048" target="_blank" rel="noreferrer">H2O</a>, <a href="https://arxiv.org/abs/2402.02750" target="_blank" rel="noreferrer">KIVI</a></li>
+<li><a href="https://vllm.ai/blog/2023-06-20-vllm" target="_blank" rel="noreferrer">vLLM: PagedAttention</a> and <a href="https://lmsys.org/blog/2024-01-17-sglang" target="_blank" rel="noreferrer">SGLang: RadixAttention</a></li>
+<li>Speculative decoding docs: <a href="https://docs.vllm.ai/en/latest/features/speculative_decoding/" target="_blank" rel="noreferrer">vLLM</a>, <a href="https://docs.sglang.io/docs/advanced_features/speculative_decoding" target="_blank" rel="noreferrer">SGLang</a>, <a href="https://docs.modular.com/stable/max/serve/speculative-decoding/" target="_blank" rel="noreferrer">Modular MAX</a></li>
+</ul>
+  </article>
+
+  <footer class="footer"><span><a href="/">Akshith Macharla</a></span><span><a href="mailto:amacharla@csuchico.edu">amacharla@csuchico.edu</a></span></footer>
+</div>
+<script>
+  var toggle = document.getElementById('theme-toggle');
+  function updateToggle() {
+    var dark = document.documentElement.dataset.theme === 'dark';
+    toggle.textContent = dark ? '☀️' : '🌙';
+  }
+  updateToggle();
+  toggle.addEventListener('click', function () {
+    var next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+    document.documentElement.dataset.theme = next;
+    try { localStorage.setItem('theme', next); } catch (e) {}
+    updateToggle();
+  });
+</script>
+<script>
+  window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
+</script>
+<script defer src="/_vercel/insights/script.js"></script>
+</body>
+</html>

@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>A Draft Model or a Draft Layer? How EAGLE Guesses Tokens · Akshith Macharla</title>
+<meta name="description" content="Speculative decoding needs a cheap guesser. A separate small model and EAGLE's single extra layer compared, with real shapes and byte counts from Llama 3.1 8B.">
+<meta property="og:type" content="article">
+<meta property="og:title" content="A Draft Model or a Draft Layer? How EAGLE Guesses Tokens">
+<meta property="og:description" content="EAGLE guesses tokens with one extra layer and ~250M new weights instead of a whole draft model. What's inside it, and why its output head costs more than the layer.">
+<meta property="og:url" content="https://akshithmacharla.vercel.app/blog/draft-model-vs-draft-layer/">
+<meta property="og:image" content="https://akshithmacharla.vercel.app/blog/draft-model-vs-draft-layer/cover.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://akshithmacharla.vercel.app/blog/draft-model-vs-draft-layer/cover.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #ffffff;
+    --text: #0f172a;
+    --muted: #64748b;
+    --border: #e2e8f0;
+    --badge-bg: #f1f5f9;
+    --link: #0f172a;
+    --line: #94a3b8;
+    --blue: #2563eb;
+    --blue-fill: rgba(37,99,235,.10);
+    --orange: #ea580c;
+    --orange-fill: rgba(234,88,12,.35);
+    --green: #16a34a;
+    --green-fill: rgba(22,163,74,.10);
+    --red: #dc2626;
+    --red-fill: rgba(220,38,38,.10);
+  }
+  html[data-theme="dark"] {
+    --bg: #0d1117;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --border: #30363d;
+    --badge-bg: #161b22;
+    --link: #e6edf3;
+    --line: #6e7681;
+    --blue: #58a6ff;
+    --blue-fill: rgba(88,166,255,.14);
+    --orange: #f0883e;
+    --orange-fill: rgba(240,136,62,.40);
+    --green: #3fb950;
+    --green-fill: rgba(63,185,80,.14);
+    --red: #f85149;
+    --red-fill: rgba(248,81,73,.14);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { color-scheme: light; scroll-behavior: smooth; }
+  html[data-theme="dark"] { color-scheme: dark; }
+  body {
+    font-family: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg); color: var(--text);
+    font-size: 16px; line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+    transition: background .15s ease, color .15s ease;
+  }
+  .container { max-width: 720px; margin: 0 auto; padding: 40px 24px 64px; }
+  a { color: var(--link); text-decoration: underline; text-decoration-color: var(--border); text-underline-offset: 3px; }
+  a:hover { text-decoration-color: var(--text); }
+
+  .top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 40px; }
+  .back { color: var(--muted); font-size: .85rem; text-decoration: none; }
+  .back:hover { color: var(--text); }
+  .theme-toggle {
+    width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center;
+    border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text);
+    font-size: 1rem; cursor: pointer;
+  }
+  .theme-toggle:hover { background: var(--badge-bg); }
+
+  h1 { font-size: 2rem; font-weight: 700; letter-spacing: -0.02em; line-height: 1.25; margin-bottom: 10px; }
+  .meta { color: var(--muted); font-size: .85rem; margin-bottom: 32px; }
+  article h2 { font-size: 1.35rem; font-weight: 700; letter-spacing: -0.01em; line-height: 1.3; margin: 44px 0 14px; }
+  article p { margin: 0 0 16px; }
+  article ul, article ol { margin: 0 0 16px 22px; }
+  article li { margin-bottom: 6px; }
+  article li > ul { margin-top: 6px; margin-bottom: 0; }
+  article strong { font-weight: 600; }
+  code {
+    font-family: 'IBM Plex Mono', monospace; font-size: .85em;
+    background: var(--badge-bg); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px;
+  }
+  pre {
+    background: var(--badge-bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: 14px 16px; margin: 0 0 20px; overflow-x: auto; line-height: 1.55;
+  }
+  pre code { background: none; border: 0; padding: 0; font-size: .82rem; }
+
+  .table-wrap { overflow-x: auto; margin: 0 0 20px; }
+  table { width: 100%; border-collapse: collapse; font-size: .88rem; line-height: 1.5; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { font-weight: 600; border-bottom: 2px solid var(--border); }
+  td code { white-space: nowrap; }
+
+  .fig { margin: 24px 0 28px; }
+  .fig-scroll { overflow-x: auto; }
+  .fig svg { display: block; width: 100%; min-width: 620px; height: auto; font-family: 'IBM Plex Sans', sans-serif; }
+  .fig figcaption { color: var(--muted); font-size: .8rem; margin-top: 8px; text-align: center; }
+  .fig .t { fill: var(--text); }
+  .fig .m { fill: var(--muted); }
+  .fig .ln { stroke: var(--line); stroke-width: 1.25; fill: none; }
+  .fig .ah { fill: var(--line); }
+  .fig .bx { fill: none; stroke: var(--line); stroke-width: 1.25; }
+  .fig .hl { fill: var(--blue-fill); stroke: var(--blue); stroke-width: 2; }
+  .fig .dash { fill: none; stroke: var(--line); stroke-width: 1.25; stroke-dasharray: 4 4; }
+  .fig .zoom { fill: none; stroke: var(--border); stroke-width: 1.25; stroke-dasharray: 4 4; }
+  .fig .grp { fill: none; stroke: var(--border); stroke-width: 1.25; }
+  .fig .qh { fill: var(--blue-fill); stroke: var(--blue); }
+  .fig .kvh { fill: var(--orange-fill); stroke: var(--orange); }
+  .fig .br { fill: none; stroke: var(--line); stroke-width: 1; }
+  .fig .gone { fill: none; stroke: var(--red); stroke-width: 1.25; stroke-dasharray: 3 3; }
+  .fig .strike { stroke: var(--red); stroke-width: 1.25; }
+  .fig .c-ok { fill: var(--green-fill); stroke: var(--green); stroke-width: 1.25; }
+  .fig .c-bad { fill: var(--red-fill); stroke: var(--red); stroke-width: 1.25; }
+  .fig .c-drop { fill: none; stroke: var(--line); stroke-width: 1.25; }
+  .fig .v-ok { fill: var(--green); }
+  .fig .v-bad { fill: var(--red); }
+  .fig .v-drop { fill: var(--muted); }
+
+  .footer { border-top: 1px solid var(--border); margin-top: 48px; padding-top: 16px; color: var(--muted); font-size: .8rem; display: flex; justify-content: space-between; gap: 16px; }
+
+  @media (max-width: 640px) {
+    body { font-size: 15px; }
+    .container { padding: 24px 16px 48px; }
+    h1 { font-size: 1.6rem; }
+    article h2 { font-size: 1.2rem; }
+    .footer { flex-direction: column; gap: 4px; }
+  }
+</style>
+<script>
+  (function () {
+    var saved = null;
+    try { saved = localStorage.getItem('theme'); } catch (e) {}
+    var preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    document.documentElement.dataset.theme = saved || preferred;
+  })();
+</script>
+</head>
+<body>
+<div class="container">
+  <div class="top">
+    <a class="back" href="/">← Akshith Macharla</a>
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Switch theme" title="Switch theme">🌙</button>
+  </div>
+
+  <h1>A Draft Model or a Draft Layer? How EAGLE Guesses Tokens</h1>
+  <div class="meta">Akshith Macharla · October 28, 2026</div>
+
+  <article>
+<p>In my <a href="/blog/kv-cache-speculative-decoding/">last post</a> I walked through speculative decoding: a small model guesses the next few tokens, and the big model checks all the guesses in one forward pass. How much that helps comes down to one thing: how cheap the guesses are.</p>
+<p>There are two common ways to build the guesser. One is a separate small model. The other is a single extra layer attached to the big model, which is what EAGLE does. This post opens both up and looks at what's inside, with real shapes from Llama 3.1 8B.</p>
+<h2>One token, start to finish</h2>
+<p>Before comparing the two, here is what happens when Llama 3.1 8B writes one token:</p>
+<ol>
+<li>The last token's ID is looked up in the <strong>embedding table</strong>, 128,256 rows × 4,096 numbers. Its row, 4,096 numbers, goes into layer 1.</li>
+<li>Those numbers pass through <strong>32 decoder layers</strong>. Each layer has attention, which looks back at earlier tokens through the KV cache, and an MLP.</li>
+<li>Out of layer 32 comes a new list of <strong>4,096 numbers</strong>: the model's summary of the whole text so far. People call it the hidden state.</li>
+<li>The <strong>output head</strong>, a 128,256 × 4,096 matrix, turns those 4,096 numbers into 128,256 scores, one per token in the vocabulary.</li>
+<li>The <strong>sampler</strong> picks one token from the scores: the top one for greedy decoding, or a random draw weighted by probability. What comes out is just a token ID.</li>
+</ol>
+<p>Three things here are easy to mix up, because two of them are 4,096 numbers long:</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>What it is</th>
+<th>Depends on the text so far?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Token ID</td>
+<td>A single number that names a token</td>
+<td>No</td>
+</tr>
+<tr>
+<td>Embedding</td>
+<td>The token's row in the embedding table, 4,096 numbers</td>
+<td>No: the same row every time the token appears</td>
+</tr>
+<tr>
+<td>Layer-32 vector</td>
+<td>What comes out of the last layer, 4,096 numbers</td>
+<td>Yes: it carries the whole context</td>
+</tr>
+</tbody>
+</table></div>
+<h2>Two ways to build the guesser</h2>
+<p>Both options end the same way: a vector goes through an output head, and the sampler picks a token. What differs is everything before that.</p>
+<figure class="fig"><div class="fig-scroll"><svg viewBox="0 0 760 536" role="img" aria-label="Separate draft model versus EAGLE draft layer, guessing the token after mat"><defs><marker id="cA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="ah"/></marker></defs><text x="24" y="30" text-anchor="start" font-size="15" font-weight="600" class="t">Two ways to guess the token after “mat”</text><text x="24" y="50" text-anchor="start" font-size="11.5" class="m">Target: Llama 3.1 8B. Both end in an output head and a sampler; what comes before differs.</text><text x="192" y="84" text-anchor="middle" font-size="13" font-weight="600" class="t">Separate draft model</text><text x="192" y="100" text-anchor="middle" font-size="11.5" class="m">Llama 3.2 1B · 1.24 B parameters</text><text x="568" y="84" text-anchor="middle" font-size="13" font-weight="600" class="t">EAGLE draft layer</text><text x="568" y="100" text-anchor="middle" font-size="11.5" class="m">mixer + 1 layer · ~250 M new parameters</text><rect x="48" y="120" width="288" height="56" rx="8" class="bx"/><text x="192" y="144" text-anchor="middle" font-size="13" font-weight="600" class="t">Input: the tokens only</text><text x="192" y="160" text-anchor="middle" font-size="11.5" class="m">“The cat sat on the mat”</text><rect x="48" y="200" width="288" height="56" rx="8" class="bx"/><text x="192" y="224" text-anchor="middle" font-size="13" font-weight="600" class="t">Its own embedding table</text><text x="192" y="240" text-anchor="middle" font-size="11.5" class="m">each token becomes 2,048 numbers</text><rect x="48" y="280" width="288" height="72" rx="8" class="bx"/><text x="192" y="304" text-anchor="middle" font-size="13" font-weight="600" class="t">16 decoder layers</text><text x="192" y="320" text-anchor="middle" font-size="11.5" class="m">works out the meaning</text><text x="192" y="336" text-anchor="middle" font-size="11.5" class="m">from the bare words</text><rect x="48" y="376" width="288" height="56" rx="8" class="bx"/><text x="192" y="400" text-anchor="middle" font-size="13" font-weight="600" class="t">Its own output head</text><text x="192" y="416" text-anchor="middle" font-size="11.5" class="m">128,256 × 2,048</text><rect x="48" y="456" width="288" height="56" rx="8" class="bx"/><text x="192" y="480" text-anchor="middle" font-size="13" font-weight="600" class="t">Guess</text><text x="192" y="496" text-anchor="middle" font-size="11.5" class="m">“.”, a period</text><path d="M192 176V200" class="ln" marker-end="url(#cA)"/><path d="M192 256V280" class="ln" marker-end="url(#cA)"/><path d="M192 352V376" class="ln" marker-end="url(#cA)"/><path d="M192 432V456" class="ln" marker-end="url(#cA)"/><rect x="424" y="120" width="288" height="56" rx="8" class="bx"/><text x="568" y="144" text-anchor="middle" font-size="13" font-weight="600" class="t">Target, 32 layers (already ran)</text><text x="568" y="160" text-anchor="middle" font-size="11.5" class="m">gives 4,096 numbers at “the”</text><rect x="424" y="200" width="288" height="56" rx="8" class="bx"/><text x="568" y="224" text-anchor="middle" font-size="13" font-weight="600" class="t">+ embedding of “mat”</text><text x="568" y="240" text-anchor="middle" font-size="11.5" class="m">target’s table · 8,192 numbers in total</text><rect x="424" y="280" width="288" height="72" rx="8" class="hl"/><text x="568" y="304" text-anchor="middle" font-size="13" font-weight="600" class="t">Mixer + 1 decoder layer</text><text x="568" y="320" text-anchor="middle" font-size="11.5" class="t">8,192 → 4,096, then attention + MLP</text><text x="568" y="336" text-anchor="middle" font-size="11.5" class="t">the only new weights</text><rect x="424" y="376" width="288" height="56" rx="8" class="bx"/><text x="568" y="400" text-anchor="middle" font-size="13" font-weight="600" class="t">The target’s output head</text><text x="568" y="416" text-anchor="middle" font-size="11.5" class="m">128,256 × 4,096 (EAGLE-1 and -2)</text><rect x="424" y="456" width="288" height="56" rx="8" class="bx"/><text x="568" y="480" text-anchor="middle" font-size="13" font-weight="600" class="t">Guess</text><text x="568" y="496" text-anchor="middle" font-size="11.5" class="m">“.”, a period</text><path d="M568 176V200" class="ln" marker-end="url(#cA)"/><path d="M568 256V280" class="ln" marker-end="url(#cA)"/><path d="M568 352V376" class="ln" marker-end="url(#cA)"/><path d="M568 432V456" class="ln" marker-end="url(#cA)"/></svg></div><figcaption>Separate draft model vs EAGLE draft layer · target: Llama 3.1 8B</figcaption></figure>
+
+<h2>Option 1: a separate small model</h2>
+<p>The simplest guesser is another, smaller model that uses the same tokenizer. For Llama 3.1 8B, a natural pick is Llama 3.2 1B.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>Llama 3.1 8B (target)</th>
+<th>Llama 3.2 1B (draft)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Layers</td>
+<td>32</td>
+<td>16</td>
+</tr>
+<tr>
+<td>Numbers per token vector</td>
+<td>4,096</td>
+<td>2,048</td>
+</tr>
+<tr>
+<td>Parameters</td>
+<td>8.03 billion</td>
+<td>1.24 billion</td>
+</tr>
+<tr>
+<td>Size in BF16</td>
+<td>16 GB</td>
+<td>2.5 GB</td>
+</tr>
+<tr>
+<td>KV cache per token</td>
+<td>128 KiB</td>
+<td>32 KiB</td>
+</tr>
+</tbody>
+</table></div>
+<p>It's a complete language model with its own embedding table and output head. It only sees the tokens, so it has to work out what the text means on its own, with a much smaller network than the target.</p>
+<p>Four guesses take four passes through all 16 layers, one after another, because each guess depends on the one before. A model this small also wastes time on every pass starting hundreds of tiny GPU jobs, and that can cost more than the actual work. If the draft is slow enough, speculative decoding ends up slower than not using it at all.</p>
+<p>The upside is that it needs no training. Any small model with the same tokenizer works out of the box.</p>
+<h2>Option 2: one extra layer (EAGLE)</h2>
+<p>EAGLE starts from a simple observation. By the time the target finishes layer 32, its 4,096 numbers already contain the answer; the output head only reads it out. Research on these vectors also shows they carry information about the next few tokens, not just the next one. So instead of a small model learning language from scratch, EAGLE trains one extra layer to take the target's vector and push it one step further.</p>
+<h3>A walk through with real tokens</h3>
+<p>Say the text is “The cat sat on the”. The target runs all 32 layers, its output head scores every token, and the sampler picks “ mat”. That's the target's own answer, so it's final and never needs checking.</p>
+<p>Now EAGLE guesses what comes after “ mat”. It gets two inputs:</p>
+<ol>
+<li><strong>The target's layer-32 vector at “the”</strong> (4,096 numbers): the summary of the sentence.</li>
+<li><strong>The embedding of “ mat”</strong> (4,096 numbers): the row for “ mat” in the target's embedding table.</li>
+</ol>
+<p>There are two different “mat” vectors here. The embedding is a fixed lookup with no context. The layer-32 vector for “ mat” would carry the whole sentence, but it doesn't exist yet, because the target hasn't processed “ mat”. That missing vector is exactly what EAGLE tries to predict.</p>
+<p>Why is one layer enough? The target has already done the hard part. Its vector at “the” knows there's a cat, that it's sitting, and that a surface comes next. Going from there to “the sentence probably ends after mat” is a small update. A separate small model gets none of that; it starts from the bare words.</p>
+<h3>What's inside the layer</h3>
+<p>The layer has three parts, run one after another:</p>
+<pre><code class="language-text">target's layer-32 vector (4,096) + embedding of the last token (4,096)
+        = 8,192 numbers
+        |
+  1. Mixer       8,192 -&gt; 4,096           glues the two inputs into one vector
+        |
+  2. Attention   looks back at earlier positions through EAGLE's own KV cache
+                 (32 query heads and 8 KV heads, like Llama)
+        |
+  3. MLP         4,096 -&gt; 14,336 -&gt; 4,096  where most of the work happens
+        |
+  4,096 numbers = EAGLE's guess of the target's layer-32 vector at &quot;mat&quot;
+        |
+  output head -&gt; a score for every token -&gt; sampler -&gt; &quot;.&quot;
+</code></pre>
+<p>Parts 2 and 3 are exactly one Llama decoder layer, the same kind as the 32 inside the target. The only new piece is the mixer at the front. Each part is a few weight matrices, and every guess multiplies through each of them once:</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Part</th>
+<th>Matrix</th>
+<th>Shape</th>
+<th>Numbers</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Mixer</td>
+<td>W_mix</td>
+<td>8,192 × 4,096</td>
+<td>33.6 M</td>
+</tr>
+<tr>
+<td>Attention</td>
+<td>query (Wq)</td>
+<td>4,096 × 4,096</td>
+<td>16.8 M</td>
+</tr>
+<tr>
+<td>Attention</td>
+<td>key (Wk)</td>
+<td>4,096 × 1,024</td>
+<td>4.2 M</td>
+</tr>
+<tr>
+<td>Attention</td>
+<td>value (Wv)</td>
+<td>4,096 × 1,024</td>
+<td>4.2 M</td>
+</tr>
+<tr>
+<td>Attention</td>
+<td>output (Wo)</td>
+<td>4,096 × 4,096</td>
+<td>16.8 M</td>
+</tr>
+<tr>
+<td>MLP</td>
+<td>gate</td>
+<td>4,096 × 14,336</td>
+<td>58.7 M</td>
+</tr>
+<tr>
+<td>MLP</td>
+<td>up</td>
+<td>4,096 × 14,336</td>
+<td>58.7 M</td>
+</tr>
+<tr>
+<td>MLP</td>
+<td>down</td>
+<td>14,336 × 4,096</td>
+<td>58.7 M</td>
+</tr>
+<tr>
+<td><strong>Total</strong></td>
+<td></td>
+<td></td>
+<td><strong>~252 M</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>That's about 0.5 GB in BF16. The embedding table and the output head are borrowed from the target, not trained. This is the original EAGLE design; EAGLE-3 changes the inputs a little, which the end of this post covers.</p>
+<p>Because the layer has attention, it also has a KV cache of its own: 1 layer × 8 KV heads × 128 numbers × 2 (K and V) × 2 bytes = <strong>4 KiB per token</strong>, against 128 KiB for the target. When the target rejects a guess, this small cache has to be cleaned up as well.</p>
+<h3>How it learns</h3>
+<p>The target stays frozen. Run it over lots of text and record its layer-32 vectors. Then train only the new layer: given the vector at one position and the next token's embedding, its output should make the output head pick the same token the target would pick next. The weights start random and get adjusted over millions of positions.</p>
+<p>That's also the catch: an EAGLE layer is trained for one specific target model. You can't take one made for Llama 3.1 8B and use it with Qwen3-8B.</p>
+<h2>One full round</h2>
+<pre><code class="language-text">1. Target pass                 -&gt; real token &quot; mat&quot; (final, no check needed)
+
+2. EAGLE pass 1: [target's vector at &quot;the&quot;] + [embedding of &quot; mat&quot;]  -&gt; &quot;.&quot;
+   EAGLE pass 2: [EAGLE's vector at &quot;mat&quot;]  + [embedding of &quot;.&quot;]     -&gt; &quot; The&quot;
+   EAGLE pass 3: [EAGLE's vector at &quot;.&quot;]    + [embedding of &quot; The&quot;]  -&gt; &quot; dog&quot;
+   EAGLE pass 4: [EAGLE's vector at &quot;The&quot;]  + [embedding of &quot; dog&quot;]  -&gt; &quot; barked&quot;
+
+3. Target pass on [&quot; mat&quot;, &quot;.&quot;, &quot; The&quot;, &quot; dog&quot;, &quot; barked&quot;]
+   -&gt; checks all four guesses at once
+
+4. Keep the guesses that match, take the target's own token at the
+   first miss, and start again.
+</code></pre>
+<p>Two details matter here. Only the first EAGLE pass starts from the target's real vector; after that, EAGLE builds on its own guessed vectors, so later guesses are less accurate. And “ mat” goes into the next target pass not to be checked again, but so the target can compute its real layer-32 vector and write its keys and values into the KV cache.</p>
+<p>So a round with four guesses costs four EAGLE passes, one after another, and one target pass.</p>
+<h2>The part that surprised me: the output head</h2>
+<p>Every EAGLE guess still goes through an output head to become a token. Here's what one guess reads from memory:</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Per guess</th>
+<th>Bytes read (BF16)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>EAGLE layer</td>
+<td>~0.5 GB</td>
+</tr>
+<tr>
+<td>Target's output head (128,256 × 4,096)</td>
+<td>~1.05 GB</td>
+</tr>
+<tr>
+<td><strong>Total per EAGLE guess</strong></td>
+<td><strong>~1.55 GB</strong></td>
+</tr>
+<tr>
+<td>For comparison: all of Llama 3.2 1B</td>
+<td>~2.5 GB</td>
+</tr>
+</tbody>
+</table></div>
+<p>The output head costs twice as much as the EAGLE layer itself. In bytes, an EAGLE guess isn't dramatically cheaper than a small draft model. So where does the speedup come from?</p>
+<ol>
+<li><strong>One layer instead of sixteen.</strong> Far fewer tiny GPU jobs to start per guess, and for one user that start-up cost is what really slows a small model down.</li>
+<li><strong>Better guesses.</strong> Starting from the target's own vector means more of them get accepted per round.</li>
+</ol>
+<p>EAGLE-3 goes after the output head directly. Its draft gets its own, smaller output head that only scores the 32,000 most common tokens: 32,000 × 4,096 numbers, about 0.26 GB, four times smaller. If the right token isn't in that list, the guess is simply wrong, and the target catches it.</p>
+<h2>Is it worth it?</h2>
+<p>Usually, yes. SGLang's docs show Llama 3.1 8B on one H100, serving one user at a time, going from 158 tokens/s with plain decoding to 373 tokens/s with EAGLE-3.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>Separate small model</th>
+<th>EAGLE layer</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>What it reads</td>
+<td>Only the tokens</td>
+<td>The tokens + the target's layer-32 vector</td>
+</tr>
+<tr>
+<td>New weights</td>
+<td>A whole model (1.24 B for Llama 3.2 1B)</td>
+<td>~250 M</td>
+</tr>
+<tr>
+<td>Layers per guess</td>
+<td>16</td>
+<td>1</td>
+</tr>
+<tr>
+<td>Its own KV cache</td>
+<td>32 KiB per token</td>
+<td>4 KiB per token</td>
+</tr>
+<tr>
+<td>Training</td>
+<td>None</td>
+<td>Trained for one target model</td>
+</tr>
+<tr>
+<td>Works on its own</td>
+<td>Yes</td>
+<td>No, it needs the target running</td>
+</tr>
+</tbody>
+</table></div>
+<p>The small model still has a place: it needs no training, and it doesn't care what kind of text you give it. An EAGLE layer trained on chat data can guess worse on code, which is why Amazon SageMaker offers to train one on your own data.</p>
+<h2>How many tokens should it guess?</h2>
+<p>The number of guesses per round, k, is a setting. There's no hard limit, but each extra guess costs more and is worth less: it's one more EAGLE pass, and it only counts if every guess before it was right. If each guess is right 75% of the time:</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>k (guesses)</th>
+<th>Tokens per round, on average</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>2</td>
+<td>2.31</td>
+</tr>
+<tr>
+<td>4</td>
+<td>3.05</td>
+</tr>
+<tr>
+<td>8</td>
+<td>3.70</td>
+</tr>
+<tr>
+<td>No limit</td>
+<td>4.00 at most</td>
+</tr>
+</tbody>
+</table></div>
+<p>Going from 4 guesses to 8 doubles the drafting work but adds only about 0.65 tokens per round. In practice, MAX defaults to 2 guesses for EAGLE, and SGLang picks 3 to 5 on its own. In AWS's tests, EAGLE-3 did best at 3 guesses.</p>
+<h2>Where EAGLE went next</h2>
+<ul>
+<li><strong>EAGLE-2</strong> guesses a tree instead of a single line. At each step it keeps the top few candidates, grows the branches it's most confident about, and the target checks the whole tree in one pass.</li>
+<li><strong>EAGLE-3</strong> reads the target's vectors from a low, a middle and a high layer instead of only the last one. It predicts tokens directly, gets its own small output head, and is trained on its own guesses, the same way it's used.</li>
+<li><strong>P-EAGLE and DFlash</strong> remove the four-passes-in-a-row problem. They guess all the tokens in one pass, so more guesses cost almost nothing extra. P-EAGLE did best at 7 guesses in AWS's tests, compared with 3 for EAGLE-3.</li>
+</ul>
+<h2>Takeaways</h2>
+<ul>
+<li><strong>A guesser can be a whole small model or a single extra layer.</strong> EAGLE is the second.</li>
+<li><strong>EAGLE's layer reads two things:</strong> the target's layer-32 vector, which carries the context, and the last token's embedding, which says which token was picked.</li>
+<li><strong>It's one ordinary decoder layer plus a mixer.</strong> About 250 million new numbers, with a tiny KV cache of its own.</li>
+<li><strong>The output head is the biggest cost per guess.</strong> EAGLE wins because it runs one layer instead of many, and because more of its guesses are right.</li>
+<li><strong>More guesses aren't free.</strong> Cheaper guesses let you afford more of them, which is where P-EAGLE and DFlash come in.</li>
+</ul>
+<p><strong>Next posts:</strong> this was the first look at how guessers are built. Next I'll go through the rest of the speculative decoding designs one by one: tree guessing in EAGLE-2, what EAGLE-3 changed, MTP, and the drafters that guess everything in one pass (P-EAGLE and DFlash), and then compare them side by side. After that, a post on the KV cache designs from <a href="/blog/kv-cache-speculative-decoding/">my first post</a>, and how each one cleans up a wrong guess.</p>
+<h2>References</h2>
+<ul>
+<li><a href="https://arxiv.org/abs/2401.15077" target="_blank" rel="noreferrer">EAGLE</a>, <a href="https://arxiv.org/abs/2406.16858" target="_blank" rel="noreferrer">EAGLE-2</a>, <a href="https://arxiv.org/abs/2503.01840" target="_blank" rel="noreferrer">EAGLE-3</a></li>
+<li><a href="https://arxiv.org/abs/2602.01469" target="_blank" rel="noreferrer">P-EAGLE</a> and <a href="https://aws.amazon.com/blogs/machine-learning/parallelize-speculative-decoding-with-p-eagle-on-amazon-sagemaker-ai/" target="_blank" rel="noreferrer">P-EAGLE on Amazon SageMaker AI</a></li>
+<li><a href="https://arxiv.org/abs/2602.06036" target="_blank" rel="noreferrer">DFlash</a></li>
+<li>Speculative decoding docs: <a href="https://docs.sglang.io/docs/advanced_features/speculative_decoding" target="_blank" rel="noreferrer">SGLang</a>, <a href="https://docs.modular.com/stable/max/serve/speculative-decoding/" target="_blank" rel="noreferrer">Modular MAX</a></li>
+</ul>
+  </article>
+
+  <footer class="footer"><span><a href="/">Akshith Macharla</a></span><span><a href="mailto:amacharla@csuchico.edu">amacharla@csuchico.edu</a></span></footer>
+</div>
+<script>
+  var toggle = document.getElementById('theme-toggle');
+  function updateToggle() {
+    var dark = document.documentElement.dataset.theme === 'dark';
+    toggle.textContent = dark ? '☀️' : '🌙';
+  }
+  updateToggle();
+  toggle.addEventListener('click', function () {
+    var next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+    document.documentElement.dataset.theme = next;
+    try { localStorage.setItem('theme', next); } catch (e) {}
+    updateToggle();
+  });
+</script>
+<script>
+  window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
+</script>
+<script defer src="/_vercel/insights/script.js"></script>
+</body>
+</html>
