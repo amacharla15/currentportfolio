@@ -142,8 +142,7 @@
   (function () {
     var saved = null;
     try { saved = localStorage.getItem('theme'); } catch (e) {}
-    var preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-    document.documentElement.dataset.theme = saved || preferred;
+    document.documentElement.dataset.theme = saved || 'dark';
   })();
 </script>
 </head>
