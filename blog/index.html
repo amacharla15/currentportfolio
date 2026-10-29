@@ -34,7 +34,7 @@
     font-size: 1rem; cursor: pointer;
   }
   .theme-toggle:hover { background: var(--badge-bg); }
-  h1 { font-size: 1.75rem; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 6px; }
+  h1 { font-size: 1.75rem; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 24px; }
   .intro { color: var(--muted); font-size: .9rem; margin-bottom: 28px; }
   .post { display: block; padding: 18px 0; border-top: 1px solid var(--border); text-decoration: none; color: var(--text); }
   .post:last-of-type { border-bottom: 1px solid var(--border); }
@@ -69,17 +69,14 @@
   </div>
 
   <h1>Blog</h1>
-  <p class="intro">Notes on LLM inference: why decoding is slow, how the KV cache works, and how speculative decoding speeds it up.</p>
 
   <a class="post" href="/blog/draft-model-vs-draft-layer/">
-    <div class="post-date">Oct 28, 2026</div>
     <div class="post-title">A Draft Model or a Draft Layer? How EAGLE Guesses Tokens</div>
     <div class="post-desc">Speculative decoding needs a cheap guesser. A separate small model vs EAGLE's single extra layer: what's inside it, what each guess reads from memory, and why the output head costs more than the layer.</div>
     <div class="post-more">Read post →</div>
   </a>
 
   <a class="post" href="/blog/kv-cache-speculative-decoding/">
-    <div class="post-date">Oct 28, 2026</div>
     <div class="post-title">Guess, Verify, Undo: KV Caches and Speculative Decoding on an H100</div>
     <div class="post-desc">Why an H100 writes text slower than you'd expect, what the KV cache saves, and how speculative decoding gets several tokens out of one forward pass, with real numbers for Llama 3.1 8B and Qwen3.</div>
     <div class="post-more">Read post →</div>

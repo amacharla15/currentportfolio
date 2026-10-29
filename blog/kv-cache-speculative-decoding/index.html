@@ -155,7 +155,7 @@
   </div>
 
   <h1>Guess, Verify, Undo: KV Caches and Speculative Decoding on an H100</h1>
-  <div class="meta">Akshith Macharla · October 28, 2026</div>
+  <div class="meta">Akshith Macharla</div>
 
   <article>
 <p>AI chatbots write their answers one token at a time (a token is a word or part of a word). Even on an NVIDIA H100, one of the fastest AI chips, this is slower than we'd expect. The reason surprises most people: the chip isn't short on math power. It spends most of its time waiting for the model to be read from memory. This post shows why, with real numbers, and then explains the trick that speeds it up: a small model guesses the next few tokens, and the big model checks all the guesses in one go.</p>
