@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -138,19 +138,11 @@
     .footer { flex-direction: column; gap: 4px; }
   }
 </style>
-<script>
-  (function () {
-    var saved = null;
-    try { saved = localStorage.getItem('theme'); } catch (e) {}
-    document.documentElement.dataset.theme = saved || 'dark';
-  })();
-</script>
 </head>
 <body>
 <div class="container">
   <div class="top">
     <nav class="crumbs"><a class="back" href="/">Akshith Macharla</a><span class="sep">/</span><a class="back" href="/blog/">Blog</a></nav>
-    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Switch theme" title="Switch theme">🌙</button>
   </div>
 
   <h1>Guess, Verify, Undo: KV Caches and Speculative Decoding on an H100</h1>
@@ -713,20 +705,6 @@ What is left:     [d2] [d3] [d4]
 
   <footer class="footer"><span><a href="/">Akshith Macharla</a></span><span><a href="mailto:amacharla@csuchico.edu">amacharla@csuchico.edu</a></span></footer>
 </div>
-<script>
-  var toggle = document.getElementById('theme-toggle');
-  function updateToggle() {
-    var dark = document.documentElement.dataset.theme === 'dark';
-    toggle.textContent = dark ? '☀️' : '🌙';
-  }
-  updateToggle();
-  toggle.addEventListener('click', function () {
-    var next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
-    document.documentElement.dataset.theme = next;
-    try { localStorage.setItem('theme', next); } catch (e) {}
-    updateToggle();
-  });
-</script>
 <script>
   window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
 </script>

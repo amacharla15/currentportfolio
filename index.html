@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -81,7 +81,7 @@
   }
   a:hover { text-decoration-color: var(--text); }
 
-  .header { position: relative; display: block; margin-bottom: 32px; padding-right: 44px; }
+  .header { position: relative; display: block; margin-bottom: 32px; }
   .header-info { flex: 1; min-width: 0; }
   .header h1 { font-size: 1.75rem; font-weight: 700; letter-spacing: -0.02em; line-height: 1.2; margin-bottom: 4px; }
   .header-tagline { color: var(--muted); font-size: .875rem; line-height: 1.6; max-width: 490px; }
@@ -204,7 +204,6 @@
   }
   @media (max-width: 640px) {
     .container { padding: 24px 16px 48px; }
-    .header { padding-right: 42px; }
     .header h1 { font-size: 1.5rem; }
     .categories-grid { grid-template-columns: 1fr; }
     .cat-projects { max-height: none; opacity: 1; }
@@ -214,12 +213,6 @@
     .footer { flex-direction: column; gap: 4px; }
   }
 </style>
-<script>
-  (function () {
-    const saved = localStorage.getItem('theme');
-    document.documentElement.dataset.theme = saved || 'dark';
-  })();
-</script>
 </head>
 <body>
 <div class="container">
@@ -237,7 +230,6 @@
         <a href="/blog/">Blog</a>
       </div>
     </div>
-    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Switch to dark theme" title="Switch theme">🌙</button>
   </header>
 
   <section class="section">
@@ -512,22 +504,6 @@
 
   <footer class="footer"><span>Akshith Macharla</span><span><a href="mailto:amacharla@csuchico.edu">amacharla@csuchico.edu</a></span></footer>
 </div>
-<script>
-  const toggle = document.getElementById('theme-toggle');
-  const updateToggle = () => {
-    const dark = document.documentElement.dataset.theme === 'dark';
-    toggle.textContent = dark ? '☀️' : '🌙';
-    toggle.setAttribute('aria-label', dark ? 'Switch to light theme' : 'Switch to dark theme');
-    toggle.setAttribute('title', dark ? 'Switch to light theme' : 'Switch to dark theme');
-  };
-  updateToggle();
-  toggle.addEventListener('click', () => {
-    const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
-    document.documentElement.dataset.theme = next;
-    localStorage.setItem('theme', next);
-    updateToggle();
-  });
-</script>
 
 <script>
   window.va = window.va || function () {
