@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Blog · Akshith Macharla</title>
+<meta name="description" content="Posts by Akshith Macharla on LLM inference: KV caches, speculative decoding, and how production engines make guessing cheap.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Blog · Akshith Macharla">
+<meta property="og:description" content="Posts on LLM inference: KV caches, speculative decoding, and how production engines make guessing cheap.">
+<meta property="og:url" content="https://akshithmacharla.vercel.app/blog/">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root { --bg: #ffffff; --text: #0f172a; --muted: #64748b; --border: #e2e8f0; --badge-bg: #f1f5f9; --link: #0f172a; }
+  html[data-theme="dark"] { --bg: #0d1117; --text: #e6edf3; --muted: #8b949e; --border: #30363d; --badge-bg: #161b22; --link: #e6edf3; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { color-scheme: light; }
+  html[data-theme="dark"] { color-scheme: dark; }
+  body {
+    font-family: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg); color: var(--text); font-size: 15px; line-height: 1.6;
+    -webkit-font-smoothing: antialiased; transition: background .15s ease, color .15s ease;
+  }
+  .container { max-width: 680px; margin: 0 auto; padding: 40px 24px 64px; }
+  a { color: var(--link); }
+  .top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 40px; }
+  .back { color: var(--muted); font-size: .85rem; text-decoration: none; }
+  .back:hover { color: var(--text); }
+  .theme-toggle {
+    width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center;
+    border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text);
+    font-size: 1rem; cursor: pointer;
+  }
+  .theme-toggle:hover { background: var(--badge-bg); }
+  h1 { font-size: 1.75rem; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 6px; }
+  .intro { color: var(--muted); font-size: .9rem; margin-bottom: 28px; }
+  .post { display: block; padding: 18px 0; border-top: 1px solid var(--border); text-decoration: none; color: var(--text); }
+  .post:last-of-type { border-bottom: 1px solid var(--border); }
+  .post-date { color: var(--muted); font-family: 'IBM Plex Mono', monospace; font-size: .72rem; margin-bottom: 4px; }
+  .post-title { font-size: 1.05rem; font-weight: 600; line-height: 1.35; margin-bottom: 6px; }
+  .post:hover .post-title { text-decoration: underline; text-underline-offset: 3px; }
+  .post-desc { color: var(--muted); font-size: .85rem; line-height: 1.6; }
+  .post-more { color: var(--muted); font-size: .8rem; margin-top: 8px; }
+  .post:hover .post-more { color: var(--text); }
+  .footer { margin-top: 48px; color: var(--muted); font-size: .8rem; display: flex; justify-content: space-between; gap: 16px; }
+  .footer a { color: var(--muted); }
+  @media (max-width: 640px) {
+    .container { padding: 24px 16px 48px; }
+    h1 { font-size: 1.5rem; }
+    .footer { flex-direction: column; gap: 4px; }
+  }
+</style>
+<script>
+  (function () {
+    var saved = null;
+    try { saved = localStorage.getItem('theme'); } catch (e) {}
+    var preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    document.documentElement.dataset.theme = saved || preferred;
+  })();
+</script>
+</head>
+<body>
+<div class="container">
+  <div class="top">
+    <a class="back" href="/">← Akshith Macharla</a>
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Switch theme" title="Switch theme">🌙</button>
+  </div>
+
+  <h1>Blog</h1>
+  <p class="intro">Notes on LLM inference: why decoding is slow, how the KV cache works, and how speculative decoding speeds it up.</p>
+
+  <a class="post" href="/blog/draft-model-vs-draft-layer/">
+    <div class="post-date">Oct 28, 2026</div>
+    <div class="post-title">A Draft Model or a Draft Layer? How EAGLE Guesses Tokens</div>
+    <div class="post-desc">Speculative decoding needs a cheap guesser. A separate small model vs EAGLE's single extra layer: what's inside it, what each guess reads from memory, and why the output head costs more than the layer.</div>
+    <div class="post-more">Read post →</div>
+  </a>
+
+  <a class="post" href="/blog/kv-cache-speculative-decoding/">
+    <div class="post-date">Oct 28, 2026</div>
+    <div class="post-title">Guess, Verify, Undo: KV Caches and Speculative Decoding on an H100</div>
+    <div class="post-desc">Why an H100 writes text slower than you'd expect, what the KV cache saves, and how speculative decoding gets several tokens out of one forward pass, with real numbers for Llama 3.1 8B and Qwen3.</div>
+    <div class="post-more">Read post →</div>
+  </a>
+
+  <footer class="footer"><span><a href="/">Akshith Macharla</a></span><span><a href="mailto:amacharla@csuchico.edu">amacharla@csuchico.edu</a></span></footer>
+</div>
+<script>
+  var toggle = document.getElementById('theme-toggle');
+  function updateToggle() { toggle.textContent = document.documentElement.dataset.theme === 'dark' ? '☀️' : '🌙'; }
+  updateToggle();
+  toggle.addEventListener('click', function () {
+    var next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+    document.documentElement.dataset.theme = next;
+    try { localStorage.setItem('theme', next); } catch (e) {}
+    updateToggle();
+  });
+</script>
+<script>
+  window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
+</script>
+<script defer src="/_vercel/insights/script.js"></script>
+</body>
+</html>

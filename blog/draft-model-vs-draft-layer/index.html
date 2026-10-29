@@ -70,6 +70,8 @@
   .top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 40px; }
   .back { color: var(--muted); font-size: .85rem; text-decoration: none; }
   .back:hover { color: var(--text); }
+  .crumbs { display: flex; align-items: center; gap: 8px; }
+  .crumbs .sep { color: var(--border); font-size: .85rem; }
   .theme-toggle {
     width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center;
     border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text);
@@ -148,7 +150,7 @@
 <body>
 <div class="container">
   <div class="top">
-    <a class="back" href="/">← Akshith Macharla</a>
+    <nav class="crumbs"><a class="back" href="/">Akshith Macharla</a><span class="sep">/</span><a class="back" href="/blog/">Blog</a></nav>
     <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Switch theme" title="Switch theme">🌙</button>
   </div>
 
