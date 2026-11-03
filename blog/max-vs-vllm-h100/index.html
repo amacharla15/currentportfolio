@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MAX vs vLLM on an H100, One Year Later · Akshith Macharla</title>
+<meta name="description" content="How Modular MAX differs from vLLM, and a benchmark of MAX 26.7 against vLLM 0.32 serving Llama 3.1 8B on one H100: the gap under load has roughly halved since 2025.">
+<meta property="og:type" content="article">
+<meta property="og:title" content="MAX vs vLLM on an H100, One Year Later">
+<meta property="og:description" content="MAX 26.7 vs vLLM 0.32 on one H100 with Llama 3.1 8B: faster with one user, about 20% behind under load, down from about 40% a year ago. Where the remaining gap comes from.">
+<meta property="og:url" content="https://akshithmacharla.vercel.app/blog/max-vs-vllm-h100/">
+<meta property="og:image" content="https://akshithmacharla.vercel.app/blog/max-vs-vllm-h100/cover.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://akshithmacharla.vercel.app/blog/max-vs-vllm-h100/cover.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #ffffff;
+    --text: #0f172a;
+    --muted: #64748b;
+    --border: #e2e8f0;
+    --badge-bg: #f1f5f9;
+    --link: #0f172a;
+    --line: #94a3b8;
+    --blue: #2563eb;
+    --blue-fill: rgba(37,99,235,.10);
+    --green: #16a34a;
+    --green-fill: rgba(22,163,74,.35);
+    --red: #dc2626;
+    --red-fill: rgba(220,38,38,.35);
+  }
+  html[data-theme="dark"] {
+    --bg: #0d1117;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --border: #30363d;
+    --badge-bg: #161b22;
+    --link: #e6edf3;
+    --line: #6e7681;
+    --blue: #58a6ff;
+    --blue-fill: rgba(88,166,255,.14);
+    --green: #3fb950;
+    --green-fill: rgba(63,185,80,.40);
+    --red: #f85149;
+    --red-fill: rgba(248,81,73,.40);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { color-scheme: light; scroll-behavior: smooth; }
+  html[data-theme="dark"] { color-scheme: dark; }
+  body {
+    font-family: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg); color: var(--text);
+    font-size: 16px; line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+    transition: background .15s ease, color .15s ease;
+  }
+  .container { max-width: 720px; margin: 0 auto; padding: 40px 24px 64px; }
+  a { color: var(--link); text-decoration: underline; text-decoration-color: var(--border); text-underline-offset: 3px; }
+  a:hover { text-decoration-color: var(--text); }
+
+  .top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 40px; }
+  .back { color: var(--muted); font-size: .85rem; text-decoration: none; }
+  .back:hover { color: var(--text); }
+  .crumbs { display: flex; align-items: center; gap: 8px; }
+  .crumbs .sep { color: var(--border); font-size: .85rem; }
+
+  h1 { font-size: 2rem; font-weight: 700; letter-spacing: -0.02em; line-height: 1.25; margin-bottom: 10px; }
+  .meta { color: var(--muted); font-size: .85rem; margin-bottom: 32px; }
+  article h2 { font-size: 1.35rem; font-weight: 700; letter-spacing: -0.01em; line-height: 1.3; margin: 44px 0 14px; }
+  article h3 { font-size: 1.05rem; font-weight: 600; margin: 28px 0 10px; }
+  article p { margin: 0 0 16px; }
+  article ul, article ol { margin: 0 0 16px 22px; }
+  article li { margin-bottom: 6px; }
+  article strong { font-weight: 600; }
+  code {
+    font-family: 'IBM Plex Mono', monospace; font-size: .85em;
+    background: var(--badge-bg); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px;
+  }
+  pre {
+    background: var(--badge-bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: 14px 16px; margin: 0 0 20px; overflow-x: auto; line-height: 1.55;
+  }
+  pre code { background: none; border: 0; padding: 0; font-size: .82rem; }
+
+  .table-wrap { overflow-x: auto; margin: 0 0 20px; }
+  table { width: 100%; border-collapse: collapse; font-size: .88rem; line-height: 1.5; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { font-weight: 600; border-bottom: 2px solid var(--border); }
+  td code { white-space: nowrap; }
+  .note { color: var(--muted); font-size: .85rem; }
+
+  .fig { margin: 24px 0 28px; }
+  .fig-scroll { overflow-x: auto; }
+  .fig svg { display: block; width: 100%; min-width: 620px; height: auto; font-family: 'IBM Plex Sans', sans-serif; }
+  .fig figcaption { color: var(--muted); font-size: .8rem; margin-top: 8px; text-align: center; }
+  .fig .t { fill: var(--text); }
+  .fig .m { fill: var(--muted); }
+  .fig .ln { stroke: var(--line); stroke-width: 1.25; fill: none; }
+  .fig .ah { fill: var(--line); }
+  .fig .bx { fill: none; stroke: var(--line); stroke-width: 1.25; }
+  .fig .hl { fill: var(--blue-fill); stroke: var(--blue); stroke-width: 2; }
+  .fig .dash { fill: none; stroke: var(--line); stroke-width: 1.25; stroke-dasharray: 5 4; }
+  .fig .grp { fill: none; stroke: var(--border); stroke-width: 1.25; }
+  .fig .c-ok { fill: var(--green-fill); stroke: var(--green); stroke-width: 1.25; }
+  .fig .c-bad { fill: var(--red-fill); stroke: var(--red); stroke-width: 1.25; }
+  .fig .s-max-ln { fill: none; stroke: var(--blue); stroke-width: 3; }
+  .fig .s-max-pt { fill: var(--blue); }
+  .fig .s-max-lb { fill: var(--blue); }
+  .fig .s-vllm-ln { fill: none; stroke: var(--line); stroke-width: 2; }
+  .fig .s-vllm-pt { fill: var(--line); }
+  .fig .s-vllm-lb { fill: var(--muted); }
+
+  .footer { border-top: 1px solid var(--border); margin-top: 48px; padding-top: 16px; color: var(--muted); font-size: .8rem; display: flex; justify-content: space-between; gap: 16px; }
+
+  @media (max-width: 640px) {
+    body { font-size: 15px; }
+    .container { padding: 24px 16px 48px; }
+    h1 { font-size: 1.6rem; }
+    article h2 { font-size: 1.2rem; }
+    .footer { flex-direction: column; gap: 4px; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="top">
+    <nav class="crumbs"><a class="back" href="/">Akshith Macharla</a><span class="sep">/</span><a class="back" href="/blog/">Blog</a></nav>
+  </div>
+
+  <h1>MAX vs vLLM on an H100, One Year Later</h1>
+  <div class="meta">Akshith Macharla · November 2, 2026</div>
+
+  <article>
+<h2>What MAX is</h2>
+<p>MAX is Modular's inference server. <code>max serve</code> exposes an OpenAI-compatible endpoint, the same way <code>vllm serve</code> does. Underneath, it doesn't run PyTorch: each model is written as a graph in MAX's Python API, compiled ahead of time by MAX's own graph compiler, and run on kernels written in Mojo, Modular's programming language.</p>
+<figure class="fig"><div class="fig-scroll"><svg viewBox="0 0 760 540" role="img" aria-label="MAX compiles the model once, then every request runs the compiled program"><defs><marker id="mA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="ah"/></marker></defs><text x="24" y="34" font-size="15" font-weight="600" class="t">MAX compiles the model once, then every request runs the compiled program</text><rect x="24" y="52" width="712" height="128" rx="8" class="grp"/><text x="40" y="76" font-size="13" font-weight="600" class="t">At startup, once</text><rect x="24" y="204" width="712" height="128" rx="8" class="grp"/><text x="40" y="228" font-size="13" font-weight="600" class="t">API process, per request</text><rect x="24" y="372" width="712" height="144" rx="8" class="grp"/><text x="136" y="396" font-size="13" font-weight="600" class="t">Model worker process, every step</text><path d="M192 128H216" class="ln" marker-end="url(#mA)"/><path d="M368 128H392" class="ln" marker-end="url(#mA)"/><path d="M544 128H568" class="ln" marker-end="url(#mA)"/><path d="M192 280H216" class="ln" marker-end="url(#mA)"/><path d="M192 456H216" class="ln" marker-end="url(#mA)"/><path d="M368 456H392" class="ln" marker-end="url(#mA)"/><path d="M544 456H568" class="ln" marker-end="url(#mA)"/><path d="M292 316V352H116V412" class="ln" marker-end="url(#mA)"/><path d="M644 412V316" class="ln" marker-end="url(#mA)"/><path d="M468 164V412" class="dash" marker-end="url(#mA)"/><rect x="40" y="92" width="152" height="72" rx="8" class="bx"/><text x="116" y="116" text-anchor="middle" font-size="13" font-weight="600" class="t">Model graph</text><text x="116" y="132" text-anchor="middle" font-size="11.5" class="m">Built in Python with</text><text x="116" y="148" text-anchor="middle" font-size="11.5" class="m">MAX&#39;s graph API</text><rect x="216" y="92" width="152" height="72" rx="8" class="bx"/><text x="292" y="116" text-anchor="middle" font-size="13" font-weight="600" class="t">Graph compiler</text><text x="292" y="132" text-anchor="middle" font-size="11.5" class="m">Fuses ops and picks</text><text x="292" y="148" text-anchor="middle" font-size="11.5" class="m">Mojo kernels</text><rect x="392" y="92" width="152" height="72" rx="8" class="hl"/><text x="468" y="116" text-anchor="middle" font-size="13" font-weight="600" class="t">Compiled program</text><text x="468" y="132" text-anchor="middle" font-size="11.5" class="m">Cached on disk for</text><text x="468" y="148" text-anchor="middle" font-size="11.5" class="m">later starts</text><rect x="568" y="92" width="152" height="72" rx="8" class="bx"/><text x="644" y="116" text-anchor="middle" font-size="13" font-weight="600" class="t">CUDA graphs</text><text x="644" y="132" text-anchor="middle" font-size="11.5" class="m">Captured for decode</text><text x="644" y="148" text-anchor="middle" font-size="11.5" class="m">batch sizes 1 to 64</text><rect x="40" y="244" width="152" height="72" rx="8" class="bx"/><text x="116" y="268" text-anchor="middle" font-size="13" font-weight="600" class="t">HTTP API</text><text x="116" y="284" text-anchor="middle" font-size="11.5" class="m">OpenAI-compatible</text><text x="116" y="300" text-anchor="middle" font-size="11.5" class="m">endpoint</text><rect x="216" y="244" width="152" height="72" rx="8" class="bx"/><text x="292" y="268" text-anchor="middle" font-size="13" font-weight="600" class="t">Tokenizer</text><text x="292" y="284" text-anchor="middle" font-size="11.5" class="m">Chat template, then</text><text x="292" y="300" text-anchor="middle" font-size="11.5" class="m">text to token IDs</text><rect x="568" y="244" width="152" height="72" rx="8" class="bx"/><text x="644" y="268" text-anchor="middle" font-size="13" font-weight="600" class="t">Detokenizer</text><text x="644" y="284" text-anchor="middle" font-size="11.5" class="m">Token IDs to text,</text><text x="644" y="300" text-anchor="middle" font-size="11.5" class="m">streamed back</text><rect x="40" y="412" width="152" height="88" rx="8" class="bx"/><text x="116" y="436" text-anchor="middle" font-size="13" font-weight="600" class="t">Scheduler</text><text x="116" y="452" text-anchor="middle" font-size="11.5" class="m">Builds every step&#39;s</text><text x="116" y="468" text-anchor="middle" font-size="11.5" class="m">batch: prefill or</text><text x="116" y="484" text-anchor="middle" font-size="11.5" class="m">decode</text><rect x="216" y="412" width="152" height="88" rx="8" class="bx"/><text x="292" y="436" text-anchor="middle" font-size="13" font-weight="600" class="t">Paged KV cache</text><text x="292" y="452" text-anchor="middle" font-size="11.5" class="m">128-token pages,</text><text x="292" y="468" text-anchor="middle" font-size="11.5" class="m">prefixes reused</text><text x="292" y="484" text-anchor="middle" font-size="11.5" class="m">by hash</text><rect x="392" y="412" width="152" height="88" rx="8" class="hl"/><text x="468" y="436" text-anchor="middle" font-size="13" font-weight="600" class="t">Compiled program</text><text x="468" y="452" text-anchor="middle" font-size="11.5" class="m">The startup build,</text><text x="468" y="468" text-anchor="middle" font-size="11.5" class="m">replayed through</text><text x="468" y="484" text-anchor="middle" font-size="11.5" class="m">CUDA graphs</text><rect x="568" y="412" width="152" height="88" rx="8" class="bx"/><text x="644" y="436" text-anchor="middle" font-size="13" font-weight="600" class="t">Mojo kernels</text><text x="644" y="452" text-anchor="middle" font-size="11.5" class="m">Matmul, attention</text><text x="644" y="468" text-anchor="middle" font-size="11.5" class="m">and norms run</text><text x="644" y="484" text-anchor="middle" font-size="11.5" class="m">on the GPU</text><text x="204" y="346" text-anchor="middle" font-size="11.5" class="m">requests over ZMQ</text><text x="636" y="362" text-anchor="end" font-size="11.5" class="m">new tokens over ZMQ</text><text x="476" y="197" font-size="11.5" class="m">loaded at startup</text></svg></div><figcaption>MAX 26.7 serving path · from its source at commit a431ffa and my server log</figcaption></figure>
+<p>Startup does the expensive work once; after that, every decode step replays a compiled program. With version 26.7 on October 22, 2026, Modular made MAX's full source available. The serving code, models and kernels are Apache 2.0, and the graph compiler and runtime are under the source-available MAX License.</p>
+
+<h2>MAX vs vLLM, layer by layer</h2>
+<p>The two servers look the same from the outside and are built alike down to the KV cache. They split at the model itself.</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Layer</th><th>vLLM 0.32</th><th>MAX 26.7</th></tr></thead>
+<tbody>
+<tr><td>API</td><td>OpenAI-compatible HTTP server</td><td>OpenAI-compatible HTTP server (plus KServe and SageMaker routes)</td></tr>
+<tr><td>Processes</td><td>API server and engine core, separate processes</td><td>API process and model worker, connected over ZMQ</td></tr>
+<tr><td>Scheduler</td><td>Continuous batching, chunked prefill; prefill chunks share steps with decoding</td><td>Continuous batching, chunked prefill; by default prefill runs in its own steps</td></tr>
+<tr><td>KV cache</td><td>Paged, 16-token blocks, prefix caching on</td><td>Paged, 128-token pages, prefix caching on</td></tr>
+<tr><td>Model definition</td><td>PyTorch modules</td><td>A graph built with MAX's Python API</td></tr>
+<tr><td>Compilation</td><td><code>torch.compile</code> at startup (12 s in my run)</td><td>Whole-graph ahead-of-time compiler (3.0 min in my run); result cached</td></tr>
+<tr><td>Kernels</td><td>FlashAttention 3, cuBLAS, Triton, FlashInfer</td><td>Written in Mojo; cuBLAS only as a fallback for uncovered matmul shapes</td></tr>
+<tr><td>Supported model architectures</td><td>391 registered architecture names, including some served through a Hugging Face Transformers fallback</td><td>88 registered architecture names, each written in MAX's graph API</td></tr>
+<tr><td>License</td><td>Apache 2.0</td><td>Serving, models and kernels Apache 2.0; graph compiler and runtime under the source-available MAX License</td></tr>
+</tbody>
+</table></div>
+<p class="note">The compile times, process layout, KV page sizes and attention backend come from my two servers' startup logs. The MAX details come from its <a href="https://github.com/modular/modular/tree/a431ffa8af8ef7cb5bb4a11ec6409fed203107bb" target="_blank" rel="noreferrer">source code</a> at commit <code>a431ffa</code>.</p>
+
+<h2>Why compile the whole graph ahead of time</h2>
+<p>MAX trades a slow first start for a model that runs as one compiled program, and for code that can target more than one GPU vendor. Modular's own <a href="https://github.com/modular/modular/blob/a431ffa8af8ef7cb5bb4a11ec6409fed203107bb/GraphCompiler/docs/ArchitectureSpecification.md" target="_blank" rel="noreferrer">architecture spec</a> lists its goals in priority order: portability, productivity, performance.</p>
+<p>What it buys:</p>
+<ul>
+<li><strong>Fusion across the whole model.</strong> The compiler sees every operation at once, so it can merge neighbors into one kernel. One example from the <a href="https://github.com/modular/modular/blob/a431ffa8af8ef7cb5bb4a11ec6409fed203107bb/max/docs/site/releases/v26.5.md" target="_blank" rel="noreferrer">26.5 release notes</a>: query/key RMSNorm followed by RoPE now runs as a single kernel.</li>
+<li><strong>One codebase, several vendors.</strong> The compiler picks kernels by their signature, and the kernels specialize internally for each device. Supporting a new GPU is then mostly kernel, driver and runtime work.</li>
+<li><strong>Almost no Python in the loop.</strong> Each step replays a compiled program through CUDA graphs. In my run at batch 1, the client measured 5.46 ms per token against 5.43 ms of logged GPU time.</li>
+<li><strong>One artifact for every KV-cache setting.</strong> Cache size and paging are runtime parameters, so changing them doesn't recompile.</li>
+</ul>
+<p>What it costs:</p>
+<ul>
+<li><strong>Cold start.</strong> The spec itself says cold start is "non-trivial (~3 minutes for 405B)". In my run, MAX's log reports 182 s of graph compilation for the 8B model (130 s for the model itself), and the result is cached for later starts. I'm not comparing total startup times: MAX's first start also included minutes of Python imports from a network volume and a 133-second weight download that vLLM later reused, so its total says more about my setup than about MAX. Modular's <a href="https://www.modular.com/blog/26-7" target="_blank" rel="noreferrer">26.7 post</a> says MAX now has full eager-mode support, which reached a first token in about 30 s, against about 110 s compiled, on a slice of Gemma 4 31B.</li>
+<li><strong>Every model is a rewrite.</strong> A model has to be written in MAX's graph API before MAX can serve it; there's no running an arbitrary PyTorch model. Modular is also <a href="https://github.com/modular/modular/blob/a431ffa8af8ef7cb5bb4a11ec6409fed203107bb/max/docs/contributing/contribution-areas.md" target="_blank" rel="noreferrer">not accepting new models</a> from outside contributors right now.</li>
+<li><strong>Speed depends on Modular's own tuning.</strong> Where a GPU and weight shape haven't been tuned, MAX uses a generic kernel configuration or falls back to cuBLAS. That turns out to matter in my benchmark.</li>
+</ul>
+
+<h2>What Modular says about performance</h2>
+<p>Modular reports MAX beating vLLM on Blackwell GPUs. On the H100 its record is mixed: it shipped Hopper matmul kernels in 2025 and small-batch Hopper tuning for "specific shapes" in early 2026, then said in September 2026 that the H100 isn't its focus.</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Date</th><th>Source</th><th>Claim</th><th>Hardware</th><th>Setup published</th></tr></thead>
+<tbody>
+<tr><td>Sept 3, 2026</td><td><a href="https://forum.modular.com/t/max-vs-vllm-for-hpc-inference-farm/3464" target="_blank" rel="noreferrer">Forum reply, Modular team member</a></td><td>"Our focus has been on optimizing for more recent GPU architectures from Blackwell and above so H100 isn't included yet."</td><td>—</td><td>—</td></tr>
+<tr><td>May 29, 2026</td><td><a href="https://www.modular.com/blog/three-trends-from-mlsys-2026" target="_blank" rel="noreferrer">Three trends from MLSys 2026</a></td><td>Gemma-4-31B-it: 2.5× faster P99 time to first token than vLLM. Kimi-K2.5: 5.5× faster median time to first token. 1.5× throughput on both.</td><td>B200</td><td>No vLLM version, GPU count, precision or workload</td></tr>
+<tr><td>Apr 2, 2026</td><td><a href="https://modular.com/blog/day-zero-launch-fastest-performance-for-gemma-4-on-nvidia-and-amd" target="_blank" rel="noreferrer">Gemma 4 launch post</a></td><td>"Our benchmarks show 15% higher throughput when compared to vLLM on NVIDIA B200."</td><td>B200</td><td>vLLM 0.18.2rc1.dev7; no workload or GPU count</td></tr>
+<tr><td>Jan 29 and Mar 19, 2026</td><td><a href="https://github.com/modular/modular/blob/a431ffa8af8ef7cb5bb4a11ec6409fed203107bb/max/docs/site/releases/v26.1.md" target="_blank" rel="noreferrer">MAX 26.1 and 26.2 release notes</a></td><td>26.1: "when M is between 2 and 64, we see a significant performance boost for specific shapes ranging between 10 - 40%." 26.2: "Optimized Hopper matmul for M=256 and small M shapes via swapAB."</td><td>Hopper</td><td>Shapes and models not named</td></tr>
+<tr><td>Mar 25, 2025</td><td><a href="https://github.com/modular/modular/blob/a431ffa8af8ef7cb5bb4a11ec6409fed203107bb/max/docs/site/releases/v25.2.md" target="_blank" rel="noreferrer">MAX 25.2 release notes</a></td><td>"MAX has been optimized to run on Hopper GPUs." Hopper matmul "achieved performance comparable to NVIDIA's highly optimized cuBLAS library."</td><td>H100, H200</td><td>No shapes or numbers</td></tr>
+</tbody>
+</table></div>
+<p>This post doesn't retest those Blackwell results. It looks at the H100: the GPU where the 2025 gap was measured, and one Modular says isn't its focus yet.</p>
+
+<h2>My benchmark, in short</h2>
+<p>Serving Llama-3.1-8B-Instruct in bf16 on one H100 SXM, MAX has roughly halved its gap to vLLM in a year. In October 2025, MAX 25.6 produced about 40% fewer tokens per second than vLLM under load; today, MAX 26.7 produces about 20% fewer than vLLM 0.32.</p>
+<ul>
+<li><strong>With one user, MAX is faster:</strong> 10–14% more tokens per second than vLLM, and a lower time to first token on short prompts.</li>
+<li><strong>With 8 or 32 users, vLLM is faster:</strong> MAX produces 14–22% fewer tokens per second, and each token takes longer.</li>
+<li><strong>The gap opens between batch 1 and batch 2.</strong> MAX's own logs show its GPU time per decode step jumping from about 5.5 ms at batch 1 to about 8.3 ms at batch 8. With one request, MAX uses a kernel that keeps the whole GPU reading weights. With two or more, two of Llama-8B's four weight matrices get a generic setting that uses only 16 of the H100's 132 cores. The code shows the switch; I haven't yet measured how much of the slowdown it explains.</li>
+</ul>
+
+<h2>Where this started</h2>
+<p>In October 2025, a user on <a href="https://forum.modular.com/t/inference-performance-issue/2408" target="_blank" rel="noreferrer">Modular's forum</a> benchmarked MAX 25.6 against vLLM 0.10.1.1 on an H100 serving Llama-3.1-8B-Instruct. With NVIDIA's GenAI-Perf at 10 concurrent users, 200-token prompts and 200-token outputs, MAX produced 800 output tokens/s against about 1,324 for vLLM. Its average time to first token was 40 ms against about 20 ms.</p>
+<p>Both servers ran with default settings. Modular staff reproduced the gap and opened an internal ticket to investigate it.</p>
+<p>I wanted to see how much that has changed by MAX 26.7, measured with a harness anyone can rerun.</p>
+
+<h2>Setup</h2>
+<p>Both servers ran on the same RunPod pod, one at a time, with their default scheduling settings. Everything in this table comes from my launch commands or the servers' own startup logs.</p>
+<div class="table-wrap"><table>
+<thead><tr><th></th><th>MAX</th><th>vLLM</th></tr></thead>
+<tbody>
+<tr><td>Version</td><td>26.7.0 (<code>max[serve]</code>)</td><td>0.32.0</td></tr>
+<tr><td>Launch flags</td><td><code>--quantization-encoding bfloat16</code> <code>--max-batch-size 64</code> <code>--device-memory-utilization 0.9</code></td><td><code>--dtype bfloat16</code> <code>--max-num-seqs 64</code> <code>--gpu-memory-utilization 0.9</code> <code>--enable-prompt-tokens-details</code></td></tr>
+<tr><td>Chunked prefill budget</td><td>8,192 tokens</td><td>8,192 tokens</td></tr>
+<tr><td>KV cache capacity</td><td>404,608 tokens</td><td>448,000 tokens</td></tr>
+</tbody>
+</table></div>
+<p><strong>Hardware:</strong> 1× NVIDIA H100 80GB HBM3 (SXM), driver 595.91.07, CUDA 13.2, 16 vCPUs. The benchmark client ran on the same pod.</p>
+<p><strong>Workload:</strong> three tests, each at 1, 8 and 32 concurrent users. Each user sends its next request as soon as the last one finishes.</p>
+<ul>
+<li><strong>short:</strong> one short question; about 56 prompt tokens including the chat template.</li>
+<li><strong>long:</strong> about 1,500 words of unique random text, then a question. Prefill-heavy.</li>
+<li><strong>shared:</strong> the same 1,500-word system prompt on every request, measured with that prefix already cached.</li>
+</ul>
+<p><strong>Rules:</strong></p>
+<ul>
+<li>Every request generates exactly 256 tokens (<code>ignore_eos</code>, temperature 0, streaming). 100 requests at 1 and 8 users, 320 at 32 users.</li>
+<li>Token counts come from each server's usage report, not from counting stream chunks.</li>
+<li>Time per output token (TPOT) = (last token time − first token time) ÷ (tokens − 1), per request.</li>
+<li>Each run's prompts start with a run-specific tag, so no run can reuse another run's cache.</li>
+<li>One run per configuration, with zero errors and zero short outputs in every run.</li>
+</ul>
+
+<h2>Results</h2>
+<p>MAX is ahead in every single-user test and behind in every multi-user test, by a similar margin across all three prompt types.</p>
+<figure class="fig"><div class="fig-scroll"><svg viewBox="0 0 760 360" role="img" aria-label="MAX leads with 1 user, trails by 14 to 22 percent with 8 or 32 users"><text x="20" y="30" font-size="15" font-weight="600" class="t">MAX leads with 1 user, trails by 14–22% with 8 or 32</text><text x="20" y="52" font-size="12" class="m">Output tokens/s, MAX relative to vLLM. Green: MAX ahead. Red: vLLM ahead.</text><line x1="60" x2="700" y1="188.9" y2="188.9" class="ln"/><text x="54" y="192.9" text-anchor="end" font-size="12" class="m">0%</text><rect x="70" y="128.8" width="48" height="60.1" class="c-ok"><title>short, 1 user: MAX 179.7 vs vLLM 158.3 tokens/s</title></rect><text x="94" y="122.8" text-anchor="middle" font-size="12" class="t">+13.5%</text><text x="94" y="318" text-anchor="middle" font-size="12" class="m">1 user</text><rect x="134" y="188.9" width="48" height="91.4" class="c-bad"><title>short, 8 users: MAX 924.1 vs vLLM 1163.5 tokens/s</title></rect><text x="158" y="295.3" text-anchor="middle" font-size="12" class="t">−20.6%</text><text x="158" y="318" text-anchor="middle" font-size="12" class="m">8 users</text><rect x="198" y="188.9" width="48" height="91.5" class="c-bad"><title>short, 32 users: MAX 3521.8 vs vLLM 4434.9 tokens/s</title></rect><text x="222" y="295.4" text-anchor="middle" font-size="12" class="t">−20.6%</text><text x="222" y="318" text-anchor="middle" font-size="12" class="m">32 users</text><rect x="290" y="144.6" width="48" height="44.3" class="c-ok"><title>long, 1 user: MAX 168.7 vs vLLM 153.4 tokens/s</title></rect><text x="314" y="138.6" text-anchor="middle" font-size="12" class="t">+10.0%</text><text x="314" y="318" text-anchor="middle" font-size="12" class="m">1 user</text><rect x="354" y="188.9" width="48" height="86.8" class="c-bad"><title>long, 8 users: MAX 765.7 vs vLLM 951.6 tokens/s</title></rect><text x="378" y="290.7" text-anchor="middle" font-size="12" class="t">−19.5%</text><text x="378" y="318" text-anchor="middle" font-size="12" class="m">8 users</text><rect x="418" y="188.9" width="48" height="63.0" class="c-bad"><title>long, 32 users: MAX 2032.4 vs vLLM 2368.3 tokens/s</title></rect><text x="442" y="266.9" text-anchor="middle" font-size="12" class="t">−14.2%</text><text x="442" y="318" text-anchor="middle" font-size="12" class="m">32 users</text><rect x="510" y="143.0" width="48" height="45.9" class="c-ok"><title>shared, 1 user: MAX 172.1 vs vLLM 156.0 tokens/s</title></rect><text x="534" y="137.0" text-anchor="middle" font-size="12" class="t">+10.3%</text><text x="534" y="318" text-anchor="middle" font-size="12" class="m">1 user</text><rect x="574" y="188.9" width="48" height="95.4" class="c-bad"><title>shared, 8 users: MAX 887.9 vs vLLM 1130.7 tokens/s</title></rect><text x="598" y="299.3" text-anchor="middle" font-size="12" class="t">−21.5%</text><text x="598" y="318" text-anchor="middle" font-size="12" class="m">8 users</text><rect x="638" y="188.9" width="48" height="82.8" class="c-bad"><title>shared, 32 users: MAX 3176.8 vs vLLM 3903.9 tokens/s</title></rect><text x="662" y="286.7" text-anchor="middle" font-size="12" class="t">−18.6%</text><text x="662" y="318" text-anchor="middle" font-size="12" class="m">32 users</text><text x="158" y="342" text-anchor="middle" font-size="12" font-weight="600" class="t">short test</text><text x="378" y="342" text-anchor="middle" font-size="12" font-weight="600" class="t">long test</text><text x="598" y="342" text-anchor="middle" font-size="12" font-weight="600" class="t">shared test</text></svg></div><figcaption>results.csv · 9 configurations, 1 run each · 1× H100 SXM, Nov 2, 2026</figcaption></figure>
+<p>Latency follows the same split. With one user, MAX has the lower time per token everywhere. With 8 or 32 users, vLLM does.</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Test</th><th>Users</th><th>TTFT p50, MAX / vLLM (ms)</th><th>TTFT p99, MAX / vLLM (ms)</th><th>TPOT p50, MAX / vLLM (ms)</th></tr></thead>
+<tbody>
+<tr><td>short</td><td>1</td><td>31.6 / 37.8</td><td>34.4 / 41.8</td><td>5.46 / 6.19</td></tr>
+<tr><td>short</td><td>8</td><td>64.4 / 72.7</td><td>81.1 / 101.6</td><td>8.06 / 6.35</td></tr>
+<tr><td>short</td><td>32</td><td>109.9 / 130.2</td><td>247.6 / 153.7</td><td>8.54 / 6.70</td></tr>
+<tr><td>long</td><td>1</td><td>72.8 / 67.7</td><td>85.7 / 87.8</td><td>5.65 / 6.27</td></tr>
+<tr><td>long</td><td>8</td><td>311.5 / 273.2</td><td>385.5 / 355.3</td><td>8.79 / 7.10</td></tr>
+<tr><td>long</td><td>32</td><td>770.0 / 759.0</td><td>1,465.0 / 1,274.8</td><td>12.62 / 10.55</td></tr>
+<tr><td>shared</td><td>1</td><td>47.8 / 50.2</td><td>52.8 / 57.1</td><td>5.65 / 6.26</td></tr>
+<tr><td>shared</td><td>8</td><td>85.6 / 108.3</td><td>113.0 / 132.4</td><td>8.31 / 6.41</td></tr>
+<tr><td>shared</td><td>32</td><td>159.3 / 125.2</td><td>314.2 / 310.5</td><td>9.37 / 7.55</td></tr>
+</tbody>
+</table></div>
+
+<h3>The 2025 forum test, rerun</h3>
+<p>I also reran the forum thread's setup with AIPerf, NVIDIA's successor to GenAI-Perf: 500 requests, 10 concurrent users, 200 output tokens, about 234 prompt tokens including the chat template, and 20 warmup requests. The ratio between the servers moved from 0.60 to 0.80.</p>
+<div class="table-wrap"><table>
+<thead><tr><th></th><th>MAX output tok/s</th><th>vLLM output tok/s</th><th>MAX ÷ vLLM</th><th>TTFT, MAX / vLLM</th></tr></thead>
+<tbody>
+<tr><td>Oct 2025 forum (MAX 25.6, vLLM 0.10.1.1, GenAI-Perf)</td><td>800</td><td>~1,324</td><td>0.60</td><td>avg 40 / ~20 ms</td></tr>
+<tr><td>Nov 2026, this pod (MAX 26.7, vLLM 0.32.0, AIPerf)</td><td>1,119 and 1,139 (two runs)</td><td>1,411</td><td>0.80</td><td>avg 95–97 / 113 ms; p99 188–233 / 142 ms</td></tr>
+</tbody>
+</table></div>
+<p>MAX's average time to first token is now lower than vLLM's on this test, but its tail is worse: p99 of 188 and 233 ms in its two runs, against 142 ms for vLLM. Both servers' absolute TTFTs are higher than in the forum's run, which is one reason to compare ratios rather than raw numbers.</p>
+
+<h2>Where the remaining gap comes from</h2>
+<p>MAX's time per token jumps by half between 1 and 8 users, while vLLM's barely moves. That jump is the throughput gap.</p>
+<figure class="fig"><div class="fig-scroll"><svg viewBox="0 0 760 360" role="img" aria-label="MAX time per token rises 48 percent from 1 to 8 users; vLLM rises 3 percent"><text x="20" y="30" font-size="15" font-weight="600" class="t">MAX's time per token rises 48% from 1 to 8 users; vLLM's rises 3%</text><text x="20" y="52" font-size="12" class="m">Median time per output token (ms), short test. Dashed line: the memory-bandwidth floor.</text><line x1="110" x2="630" y1="269.1" y2="269.1" class="dash"/><text x="110" y="287.1" font-size="12" class="m">4.81 ms: bf16 weights read once at 3.35 TB/s</text><polyline points="140,244.3 370,145.0 600,126.7" class="s-max-ln"/><circle cx="140" cy="244.3" r="5" class="s-max-pt"><title>MAX, 1 user: 5.46 ms per token</title></circle><text x="140" y="266.3" text-anchor="middle" font-size="12" font-weight="600" class="t">5.46</text><circle cx="370" cy="145.0" r="5" class="s-max-pt"><title>MAX, 8 users: 8.06 ms per token</title></circle><text x="370" y="133.0" text-anchor="middle" font-size="12" font-weight="600" class="t">8.06</text><circle cx="600" cy="126.7" r="5" class="s-max-pt"><title>MAX, 32 users: 8.54 ms per token</title></circle><text x="600" y="114.7" text-anchor="middle" font-size="12" font-weight="600" class="t">8.54</text><text x="614" y="130.7" font-size="12" font-weight="600" class="s-max-lb">MAX</text><polyline points="140,216.4 370,210.3 600,196.9" class="s-vllm-ln"/><circle cx="140" cy="216.4" r="5" class="s-vllm-pt"><title>vLLM, 1 user: 6.19 ms per token</title></circle><text x="140" y="204.4" text-anchor="middle" font-size="12" class="t">6.19</text><circle cx="370" cy="210.3" r="5" class="s-vllm-pt"><title>vLLM, 8 users: 6.35 ms per token</title></circle><text x="370" y="232.3" text-anchor="middle" font-size="12" class="t">6.35</text><circle cx="600" cy="196.9" r="5" class="s-vllm-pt"><title>vLLM, 32 users: 6.7 ms per token</title></circle><text x="600" y="218.9" text-anchor="middle" font-size="12" class="t">6.70</text><text x="614" y="200.9" font-size="12" font-weight="600" class="s-vllm-lb">vLLM</text><text x="140" y="335" text-anchor="middle" font-size="12" class="m">1 user</text><text x="370" y="335" text-anchor="middle" font-size="12" class="m">8 users</text><text x="600" y="335" text-anchor="middle" font-size="12" class="m">32 users</text></svg></div><figcaption>results.csv, short test · floor = 15.0 GiB of bf16 weights ÷ 3.35 TB/s (H100 SXM spec)</figcaption></figure>
+<p><strong>It's GPU work, not server overhead.</strong> MAX logs the GPU execution time of each step. Its median was 5.4–5.7 ms at batch 1, 8.3 ms at batch 8, 8.2 ms at batch 10, and 9.3 ms at batch 32. At batch 1, the time per token my client measured (5.46 ms) is within 0.03 ms of the logged GPU time (5.43 ms).</p>
+<p><strong>It shouldn't cost that much.</strong> Generating one token reads every weight once: 16 GB in bf16. At the H100 SXM's <a href="https://portal.mlcloud.uni-tuebingen.de/user-guide/_specs/gpu/h100/" target="_blank" rel="noreferrer">3.35 TB/s</a> that takes 4.8 ms, so MAX at batch 1 runs at about 89% of peak memory bandwidth. A batch of 8 reads those same weights once for all 8 users, so its step should take almost the same time. MAX's batch-8 step reaches about 58%.</p>
+<p><strong>Where the time goes.</strong> MAX's H100 matmul code picks a kernel by how many requests are in the batch (<a href="https://github.com/modular/modular/blob/a431ffa8af8ef7cb5bb4a11ec6409fed203107bb/max/kernels/src/linalg/matmul/gpu/sm90/dispatch.mojo" target="_blank" rel="noreferrer"><code>dispatch.mojo</code></a>, commit <code>a431ffa</code>):</p>
+<ul>
+<li><strong>One request:</strong> a kernel built for a single row (a GEMV), used for every model (<a href="https://github.com/modular/modular/blob/a431ffa8af8ef7cb5bb4a11ec6409fed203107bb/max/kernels/src/linalg/matmul/gpu/sm90/dispatch.mojo#L1011" target="_blank" rel="noreferrer">line 1011</a>). It keeps the whole GPU reading weights, so MAX runs near the hardware limit.</li>
+<li><strong>Two or more requests:</strong> a general matmul that looks up tuned settings for the exact weight shape. The bf16 H100 table covers shapes from models such as Llama 3.3 70B and Gemma 3 27B, but none of Llama-3.1-8B's four, so they get one generic setting (<a href="https://github.com/modular/modular/blob/a431ffa8af8ef7cb5bb4a11ec6409fed203107bb/max/kernels/src/linalg/matmul/gpu/sm90/dispatch.mojo#L1794" target="_blank" rel="noreferrer">line 1794</a>). There is a tuned H100 table for exactly these four shapes, but only for FP8 weights (<a href="https://github.com/modular/modular/blob/a431ffa8af8ef7cb5bb4a11ec6409fed203107bb/max/kernels/src/linalg/matmul/gpu/sm90/dispatch.mojo#L514" target="_blank" rel="noreferrer">line 514</a>).</li>
+</ul>
+<p>The generic setting splits each weight matrix into chunks of 256 output columns and gives each chunk to one of the H100's 132 SMs, its cores. With 2 to 64 requests in the batch:</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Weight matrix</th><th>Output × input</th><th>Size per layer</th><th>Chunks = SMs working, of 132</th></tr></thead>
+<tbody>
+<tr><td>QKV</td><td>6144 × 4096</td><td>50 MB</td><td>24</td></tr>
+<tr><td>Attention output</td><td>4096 × 4096</td><td>34 MB</td><td>16</td></tr>
+<tr><td>Gate/up</td><td>28672 × 4096</td><td>235 MB</td><td>112</td></tr>
+<tr><td>Down</td><td>4096 × 14336</td><td>117 MB</td><td>16</td></tr>
+</tbody>
+</table></div>
+<p>A decode step is limited by how fast weights are read, and reading is fastest when many SMs read at once. Here the attention-output and down matrices, about a third of each layer's weights, are read by 16 SMs while the other 116 wait. That fits both of Modular's statements: "H100 isn't included yet," and small-batch Hopper tuning for "specific shapes." Llama-3.1-8B's bf16 shapes aren't among them.</p>
+<p><strong>What this doesn't prove yet.</strong> The code path and tile counts come from MAX's source; their cost doesn't. I haven't profiled a step, and attention also changes with batch size, so I can't yet say the matmuls account for all of the extra 2.7 ms.</p>
+
+<h2>What I'd check next</h2>
+<p>The explanation can be tested in about an hour of GPU time, and if it holds, the fix starts with tooling MAX already has. The mechanism below is checked in MAX's source; the time it would save isn't measured yet.</p>
+<p><strong>Confirm the cause:</strong></p>
+<ol>
+<li>Sweep batch sizes 1, 2, 4, 8 and 16. A jump already at 2 points to a code-path switch, not growing load.</li>
+<li>Profile one decode step at batch 1 and at batch 8 with Nsight Systems. MAX has this built in since 26.4 (<a href="https://github.com/modular/modular/blob/max/v26.7.0/max/python/docs/cli/benchmark.rst" target="_blank" rel="noreferrer">CLI docs</a>): launch the server under <code>nsys launch</code> and <code>max benchmark --profile</code> prints a ranked table of GPU kernels. If the extra 2.7 ms sits in the matmul kernels, it's the dispatch; if it's in attention or in idle gaps between kernels, it isn't.</li>
+<li>Time the four weight shapes on their own with MAX's <a href="https://github.com/modular/modular/blob/a431ffa8af8ef7cb5bb4a11ec6409fed203107bb/max/docs/kernel-benchmarking.md" target="_blank" rel="noreferrer"><code>kbench</code></a>, for batches of 1 to 64.</li>
+</ol>
+<p><strong>Where a fix would start, if the matmuls are the cause:</strong></p>
+<ul>
+<li><strong>Swap A and B for these shapes.</strong> MAX's own config builder says that when the batch is small compared to the output width, swapping the two inputs "improves SM utilization" (<a href="https://github.com/modular/modular/blob/a431ffa8af8ef7cb5bb4a11ec6409fed203107bb/max/kernels/src/linalg/matmul/gpu/sm90/config.mojo#L434" target="_blank" rel="noreferrer"><code>config.mojo</code></a>). Swapping cuts each matrix along its 4096 output columns, in pieces of 64. MAX already does this for a 4096 × 1536 matrix with fewer than 41 requests (<a href="https://github.com/modular/modular/blob/a431ffa8af8ef7cb5bb4a11ec6409fed203107bb/max/kernels/src/linalg/matmul/gpu/sm90/dispatch.mojo#L1815" target="_blank" rel="noreferrer">line 1815</a>), where the same 4096 columns become 64 chunks instead of 16.</li>
+<li><strong>Or add tuned entries for these shapes.</strong> MAX's H100 table is generated by Modular's <code>kprofile</code> tool from an autotuning spec, <a href="https://github.com/modular/modular/blob/a431ffa8af8ef7cb5bb4a11ec6409fed203107bb/max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml" target="_blank" rel="noreferrer"><code>tuning_table_bf16.yaml</code></a>. Covering these four shapes for 2 to 128 requests means new entries, not a new kernel.</li>
+</ul>
+<p><strong>The target:</strong> if the batch-8 step stayed near its batch-1 time of about 5.5 ms, MAX would beat vLLM's 6.35 ms at that load.</p>
+<p>If the profile confirms it, I'll share it with Modular as a GitHub issue, with the profile and <code>kbench</code> numbers attached. MAX's kernel code currently <a href="https://github.com/modular/modular/blob/a431ffa8af8ef7cb5bb4a11ec6409fed203107bb/max/docs/contributing/contribution-areas.md" target="_blank" rel="noreferrer">accepts bug fixes only</a>.</p>
+
+<h2>Two other differences worth knowing</h2>
+<p><strong>Prefix-cache granularity.</strong> MAX's KV cache stores tokens in 128-token pages; vLLM's blocks hold 16 tokens. A shared prefix shorter than one page is never reused. In the short test, every prompt in a run shares the chat template and my run tag: vLLM served 60.3% of prompt tokens from cache, MAX 0%. In the shared test, the hit rates were 95.9% (MAX) and 98.9% (vLLM). For real traffic, this matters when many requests share a short system prompt.</p>
+<p><strong>Tail latency with long prompts.</strong> At 32 users in the long test, vLLM's p99 gap between streamed tokens was 123 ms; MAX's was 23.8 ms. MAX's median time per token was still worse (12.6 ms vs 10.6 ms). vLLM schedules prefill chunks in the same steps as decoding, while MAX runs prefill in separate steps by default. I haven't traced which part of that produces the difference.</p>
+
+<h2>Caveats</h2>
+<ul>
+<li><strong>One run per configuration.</strong> The two AIPerf runs of MAX agreed within 2%, but I'd treat differences under about 5% as noise until the full matrix is repeated.</li>
+<li><strong>One GPU, one model, one precision.</strong> These results say nothing about FP8, larger models, multiple GPUs, or AMD hardware.</li>
+<li><strong>Default scheduling only.</strong> MAX can mix prefill and decode in one step with <code>--enable-in-flight-batching</code>; I didn't test it.</li>
+<li><strong>Closed-loop load.</strong> Each user waits for its answer before sending the next request. A fixed request-rate (open-loop) test can rank servers differently.</li>
+<li><strong>Client on the same machine.</strong> The load generator shared the pod's 16 vCPUs with the server.</li>
+<li><strong>The 2025 comparison is a ratio, not a rerun.</strong> The forum test used GenAI-Perf, older versions, and an H100 whose variant wasn't stated. Compare the MAX-to-vLLM ratios, not the absolute numbers.</li>
+</ul>
+
+<h2>Reproduce it</h2>
+<p>The harness is three small files, <code>bench.py</code>, <code>run_all.sh</code> and <code>compare.py</code>, on GitHub at <a href="https://github.com/amacharla15/KernelPref" target="_blank" rel="noreferrer">amacharla15/KernelPref</a>, along with this run's CSV, both server logs and the AIPerf outputs. Use a fresh virtual environment for each server, on local disk, and upgrade pip first: an old pip can fail to install either package, and on a network volume Python imports alone can add minutes to startup.</p>
+<pre><code># MAX
+pip install -U pip
+pip install "max[serve]==26.7.0" openai
+max serve --model meta-llama/Llama-3.1-8B-Instruct --quantization-encoding bfloat16 \
+  --max-batch-size 64 --device-memory-utilization 0.9 &gt; max.log 2&gt;&amp;1 &amp;
+until curl -sf localhost:8000/v1/models &gt;/dev/null; do sleep 5; done
+./run_all.sh max rep1
+
+# vLLM (after stopping MAX)
+pip install -U pip
+pip install "vllm==0.32.0" openai
+vllm serve meta-llama/Llama-3.1-8B-Instruct --dtype bfloat16 --max-num-seqs 64 \
+  --gpu-memory-utilization 0.9 --enable-prompt-tokens-details &gt; vllm.log 2&gt;&amp;1 &amp;
+until curl -sf localhost:8000/v1/models &gt;/dev/null; do sleep 5; done
+./run_all.sh vllm rep1
+
+python compare.py max vllm
+</code></pre>
+
+<h2>What's next</h2>
+<ol>
+<li>Repeat every configuration twice more.</li>
+<li>Run MAX with <code>--enable-in-flight-batching</code>.</li>
+<li>Add SGLang.</li>
+</ol>
+
+<h2>References</h2>
+<ul>
+<li><a href="https://forum.modular.com/t/inference-performance-issue/2408" target="_blank" rel="noreferrer">Modular forum: "Inference performance issue" (Oct 2025)</a></li>
+<li><a href="https://forum.modular.com/t/max-vs-vllm-for-hpc-inference-farm/3464" target="_blank" rel="noreferrer">Modular forum: "MAX vs vLLM for HPC inference farm" (Sept 2026)</a></li>
+<li><a href="https://modular.com/blog/day-zero-launch-fastest-performance-for-gemma-4-on-nvidia-and-amd" target="_blank" rel="noreferrer">Modular: Gemma 4 launch post (Apr 2026)</a></li>
+<li><a href="https://www.modular.com/blog/three-trends-from-mlsys-2026" target="_blank" rel="noreferrer">Modular: Three trends from MLSys 2026 (May 2026)</a></li>
+<li><a href="https://www.modular.com/blog/26-7" target="_blank" rel="noreferrer">Modular 26.7: Opening up MAX (Oct 2026)</a></li>
+<li><a href="https://github.com/modular/modular/blob/a431ffa8af8ef7cb5bb4a11ec6409fed203107bb/GraphCompiler/docs/ArchitectureSpecification.md" target="_blank" rel="noreferrer">MAX graph compiler architecture spec</a> (commit <code>a431ffa</code>)</li>
+<li><a href="https://github.com/modular/modular/blob/a431ffa8af8ef7cb5bb4a11ec6409fed203107bb/max/kernels/src/linalg/matmul/gpu/sm90/dispatch.mojo" target="_blank" rel="noreferrer">MAX H100 matmul dispatch, <code>dispatch.mojo</code></a> (commit <code>a431ffa</code>)</li>
+<li>MAX release notes: <a href="https://github.com/modular/modular/blob/a431ffa8af8ef7cb5bb4a11ec6409fed203107bb/max/docs/site/releases/v25.2.md" target="_blank" rel="noreferrer">25.2</a>, <a href="https://github.com/modular/modular/blob/a431ffa8af8ef7cb5bb4a11ec6409fed203107bb/max/docs/site/releases/v26.1.md" target="_blank" rel="noreferrer">26.1</a>, <a href="https://github.com/modular/modular/blob/a431ffa8af8ef7cb5bb4a11ec6409fed203107bb/max/docs/site/releases/v26.2.md" target="_blank" rel="noreferrer">26.2</a>, <a href="https://github.com/modular/modular/blob/a431ffa8af8ef7cb5bb4a11ec6409fed203107bb/max/docs/site/releases/v26.4.md" target="_blank" rel="noreferrer">26.4</a></li>
+<li><a href="https://github.com/vllm-project/vllm/tree/v0.32.0" target="_blank" rel="noreferrer">vLLM v0.32.0</a></li>
+<li><a href="https://portal.mlcloud.uni-tuebingen.de/user-guide/_specs/gpu/h100/" target="_blank" rel="noreferrer">H100 SXM specifications (University of Tübingen ML Cloud)</a></li>
+</ul>
+  </article>
+
+  <footer class="footer"><span><a href="/">Akshith Macharla</a></span><span><a href="mailto:amacharla@csuchico.edu">amacharla@csuchico.edu</a></span></footer>
+</div>
+<script>
+  window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
+</script>
+<script defer src="/_vercel/insights/script.js"></script>
+</body>
+</html>
