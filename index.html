@@ -226,6 +226,7 @@
         <a href="https://github.com/amacharla15" target="_blank" rel="noreferrer">GitHub</a>
         <a href="https://www.linkedin.com/in/akshith-macharla-/" target="_blank" rel="noreferrer">LinkedIn</a>
         <a href="mailto:amacharla@csuchico.edu">Email</a>
+        <a href="#research">Research</a>
         <a href="#resumes">Resumes</a>
         <a href="/blog/">Blog</a>
       </div>
@@ -237,9 +238,27 @@
     <p class="section-text">I work across the systems stack: CUDA kernels, LLM inference, Post training, and production backend services. I care about measurable performance, correctness, and how the system behaves underneath the API.</p>
   </section>
 
+<section class="section" id="research">
+  <h2 class="section-title">Research</h2>
+
+  <div class="oss-item">
+    <div class="oss-name"><a href="papers/pod-attention-a100-h100.pdf" target="_blank" rel="noreferrer">Does POD-Attention Still Help on Hopper? A Replication on A100 and H100</a></div>
+    <div class="oss-meta"><span class="status">Technical report · Nov 2026</span></div>
+    <div class="oss-desc">Master's research (CSCI 693, CSU Chico), advised by Prof. Bryan Dixon. Replicates POD-Attention (ASPLOS '25), which computes prefill and decode attention in one fused GPU kernel, across 54 workloads on an A100, then extends the study to short decode contexts and to an H100. The fused kernel holds up on the A100; on the H100 its advantage shrinks, mostly at short contexts, and it loses to the H100's default FlashAttention-3 prefill.</div>
+    <div class="oss-links"><a href="papers/pod-attention-a100-h100.pdf" target="_blank" rel="noreferrer">Paper (PDF) ↗</a><a href="https://github.com/amacharla15/pod-attention-llm-inference" target="_blank" rel="noreferrer">Code ↗</a></div>
+  </div>
+
+  <div class="oss-item">
+    <div class="oss-name"><a href="https://github.com/awslabs/keys_values" target="_blank" rel="noreferrer">Position Encoding for Sparse Attention · AWS Labs keys_values</a></div>
+    <div class="oss-meta"><span class="status">Ongoing</span></div>
+    <div class="oss-desc">Research collaboration with Matthias Seeger (Principal Applied Scientist, Amazon), started in Nov 2026 after three merged PRs to keys_values. The question is whether position encoding limits the quality of selective sparse attention; the first step is a review of recent work and an initial experiment that uses several position encodings at once.</div>
+    <div class="oss-links"><a href="https://github.com/awslabs/keys_values/issues/169" target="_blank" rel="noreferrer">Discussion ↗</a></div>
+  </div>
+</section>
+
 <section class="section" id="open-source">
   <h2 class="section-title">Open Source Contributions</h2>
-  <p class="section-note">Upstream pull requests · 4 merged</p>
+  <p class="section-note">Upstream pull requests · 6 merged</p>
 
   <div class="oss-item">
     <div class="oss-name"><a href="https://github.com/pytorch/executorch/pull/22892" target="_blank" rel="noreferrer">PyTorch ExecuTorch · PR #22892</a></div>
